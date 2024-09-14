@@ -1,2 +1,2 @@
 # mandelbrot65
-Mandelbrot calulcation on a 6502
+Mandelbrot calculation on a 6502
