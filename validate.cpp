@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstring>
 #include <sstream>
+#include <fstream>
 #include <algorithm>
 
 const int ISIZE=3;
@@ -436,41 +437,183 @@ void test_fixed()
 	test_mul();
 }
 
-
-static int screen_x = 0;
-
-void output_start( const std::string s )
+class ioutput
 {
-	// Replace ':' by '/' in s
-	std::string modified_s = s; // Create a copy of the string
-	std::replace(modified_s.begin(), modified_s.end(), ':', '/'); // Replace ':' with '/'
-
-	std::cout << "; " << modified_s;
-	std::cout << std::endl;
-}
-
-void output( char c )
-{
-	if (screen_x==0)
-		std::cout << "  .byte \"";
-
-	if (c==':')
-		std::cout << "\\";
-	std::cout << c;
-	screen_x++;
-	if (screen_x==40)
+protected:
+	int w_;
+	int h_;
+public:
+	virtual ~ioutput() {}
+	void output_start( const std::string s, int w, int h )
 	{
-		std::cout << "\"";
-		std::cout << std::endl;
-		screen_x = 0;
+		w_ = w;
+		h_ = h;
+		do_output_start( s );
 	}
-}
+	virtual void do_output_start( const std::string s ) {}
 
-void output_end()
+	void output( char c, fixed_t fx, fixed_t fy )
+	{
+		do_output( c, fx, fy );
+	};
+	
+	virtual void do_output( char c, fixed_t fx, fixed_t fy ) = 0;
+
+	void output_end()
+	{
+		do_output_end();
+	}
+
+	virtual void do_output_end() {}
+};
+
+class asm_output : public ioutput
 {
-	std::cout << "  .byte 0";
-	std::cout << std::endl;
-}
+	int screen_x = 0;
+
+public:
+	virtual void do_output_start( const std::string s )
+	{
+		// Replace ':' by '/' in s
+		std::string modified_s = s; // Create a copy of the string
+		std::replace(modified_s.begin(), modified_s.end(), ':', '/'); // Replace ':' with '/'
+
+		std::cout << "; " << modified_s;
+		std::cout << std::endl;
+	}
+
+	virtual void do_output( char c, fixed_t fx, fixed_t fy )
+	{
+		if (screen_x==0)
+			std::cout << "  .byte \"";
+
+		if (c==':')
+			std::cout << "\\";
+		std::cout << c;
+		screen_x++;
+		if (screen_x==w_)
+		{
+			std::cout << "\"";
+			std::cout << std::endl;
+			screen_x = 0;
+		}
+	}
+
+	virtual void do_output_end()
+	{
+		std::cout << "  .byte 0";
+		std::cout << std::endl;
+	}
+};
+
+class font_t
+{
+	static const int width = 8;
+	static const int height = 8;
+	static const int size = 64;
+
+	uint8_t font_[size*height];
+public:
+	font_t( const char *name )
+	{
+		// Load file into font_
+		FILE *f = fopen(name, "rb");
+		if (f==nullptr)
+		{
+			std::cerr << "Cannot open file " << name << std::endl;
+			exit(1);
+		}
+		if (fread(font_, size*height, 1, f)!=1)
+		{
+			std::cerr << "Cannot read file " << name << std::endl;
+			exit(1);
+		}
+		fclose(f);
+	}
+
+	const uint8_t *get( int c ) const
+	{
+		c %= size;
+		return font_+c*height;
+	}
+};
+
+class img_output : public ioutput
+{
+	const font_t &font_;
+
+	uint8_t *data;
+	// [40*24*8];
+
+	int x_ = 0;
+	int y_ = 0;
+
+	int index_ = 0;
+public:
+	img_output( const font_t &font ) : font_(font) {}
+
+	virtual void do_output_start( const std::string s )
+	{
+		x_ = y_ = 0;
+		data = new uint8_t[w_*h_*8];
+	}
+
+	virtual void do_output( char c, fixed_t fx, fixed_t fy )
+	{
+		int offset = y_*w_*8+x_;
+
+		if ((y_%24)==0)
+		{
+			std::string s = std::to_string( fx.to_float() )+","+std::to_string( fy.to_float() );
+			int x = x_%40;
+			if (x<s.size())
+				c = s[x];
+		}
+
+		auto p = font_.get(c);
+		for (int i=0;i!=8;i++)
+		{
+			assert( offset+i*w_ >= 0 );
+			assert( offset+i*w_ < w_*h_*8 );
+			data[offset+i*w_] = p[i];
+		}
+
+		x_++;
+		if (x_==w_)
+		{
+			x_ = 0;
+			y_++;
+		}
+	}
+
+	virtual void do_output_end()
+	{
+		std::string filename = "/tmp/mandel";
+		filename += std::to_string(index_++);
+		filename += ".pbm";
+		// Write data as a 320x192 black and white pixel image
+		std::ofstream ofs(filename, std::ios::binary);
+		if (!ofs) {
+			std::cerr << "Cannot open file " << filename << std::endl;
+			return;
+		}
+		ofs << "P4" << std::endl;
+		ofs << w_*8 << " " << h_*8 << std::endl;
+		for (int i = 0; i < h_*8; i++)
+		{
+			for (int j = 0; j < w_; j++)
+			{
+				auto v = (uint8_t)((data[i * w_ + j]^0xff));
+				if ((i%(24*8))==0)
+					v ^= 0xff;
+				if ((j%40)==0)
+					v ^= 0x80;
+				ofs << v;
+			}
+		}
+		ofs.close();
+	}
+};
 
 struct place_t
 {
@@ -479,10 +622,13 @@ struct place_t
 	fixed_t rx_;
 	fixed_t ry_;
 
-	place_t(fixed_t x, fixed_t y, int rx, int ry) : x_(x), y_(y), rx_(fixed_t::epsilon(rx)), ry_(fixed_t::epsilon(ry))
+	int w_ = 40;
+	int h_ = 24;
+
+	place_t(fixed_t x, fixed_t y, int rx, int ry, int w=40, int h=24) : x_(x), y_(y), rx_(fixed_t::epsilon(rx)), ry_(fixed_t::epsilon(ry)), w_(w), h_(h)
 	{
-		x_ = x_.to_float()-rx_.to_float()*20;
-		y_ = y_.to_float()-ry_.to_float()*12;
+		x_ = x_.to_float()-rx_.to_float()*w_/2;
+		y_ = y_.to_float()-ry_.to_float()*h_/2;
 	}
 
 	std::string description() const
@@ -521,45 +667,54 @@ char palette( int i )
 	return p[i];
 }
 
-void mandel( const place_t &place )
+void mandel( const place_t &place, ioutput &out )
 {
-	output_start( place.description() );
+	out.output_start( place.description(), place.w_, place.h_ );
 	auto y = place.y_;
-	for (int i=0;i!=24;i++)
+	for (int i=0;i!=place.h_;i++)
 	{
 		auto x = place.x_;
-		for (int j=0;j!=40;j++)
+		for (int j=0;j!=place.w_;j++)
 		{
-			int i = iter(x,y,x,y);
-			output( palette(i) );
+			int it = iter(x,y,x,y);
+			out.output( palette(it), x, y );
 			x = x + place.rx_;
 		}
 		y = y + place.ry_;
+		std::cout << i << " " << std::flush;
 	}
-	output_end();
+	out.output_end();
+	std::cout << std::endl;
 }
 
-void julia( const place_t &place, fixed_t cx, fixed_t cy )
+void julia( const place_t &place, fixed_t cx, fixed_t cy, ioutput &out )
 {
-	output_start( place.description() );
+	out.output_start( place.description(), place.w_, place.h_ );
 	auto y = place.y_;
-	for (int i=0;i!=24;i++)
+	for (int i=0;i!=place.h_;i++)
 	{
 		auto x = place.x_;
-		for (int j=0;j!=40;j++)
+		for (int j=0;j!=place.w_;j++)
 		{
-			int i = iter(cx,cy,x,y);
-			output( palette(i) );
+			int it = iter(cx,cy,x,y);
+			out.output( palette(it), x, y );
 			x = x + place.rx_;
 		}
 		y = y + place.ry_;
+		std::cout << i << " " << std::flush;
 	}
-	output_end();
+	out.output_end();
+	std::cout << std::endl;
 }
 
 int main()
 {
 	// test_fixed();
+
+	font_t font("s2513.d2");
+
+	// asm_output out;
+	img_output out( font );
 
 	place_t p1(-0.61,0,19,24);
 	place_t p2(-1.04,-0.33,1,1);
@@ -570,14 +725,48 @@ int main()
 	place_t j0(0,0,25,40);
 	place_t j1(0.8,0,12,20);
 
-	mandel( p1 );
-	mandel( p2 );
-	mandel( p3 );
-	mandel( p4 );
-	mandel( p5 );
-	julia( j1, -0.8, 0.156 );
-	julia( j0, -0.8, 0.156 );
-	julia( j1, -0.55,-0.64 );
+	place_t p0(-0.61,0,1,1,576,512);
+	// mandel( p0, out );
+
+
+	// mandel( p1, out );
+	// mandel( p2, out );
+	// mandel( p3, out );
+	// mandel( p4, out );
+	// mandel( p5, out );
+	// julia( j1, -0.8, 0.156, out );
+	// julia( j0, -0.8, 0.156, out );
+	// julia( j1, -0.55,-0.64, out );
+
+	place_t j_large(0,0,1,1,1024,1024);
+
+	for (int i=32;i!=0;i/=2)
+	{
+		place_t pl( 0,0,i,i,1024/i,1024/i );
+		mandel( pl, out );
+	}
+
+	for (int i=32;i!=0;i/=2)
+	{
+		place_t pl( 0,0,i,i,1024/i,1024/i );
+		julia( pl, -0.8, 0.156, out );
+	}
+
+	for (int i=32;i!=0;i/=2)
+	{
+		place_t pl( 0,0,i,i,1024/i,1024/i );
+		julia( pl, -0.55, -0.64, out );
+	}
+
+	for (int i=32;i!=0;i/=2)
+	{
+		place_t pl( 0,0,i,i,1024/i,1024/i );
+		julia( pl, 0.27, 1.0/256, out );
+	}
+
+	// julia( j_large, -0.8, 0.156, out );
+	// julia( j_large, -0.55, -0.64, out );
+	// julia( j_large, 0.27, 1.0/256, out );
 
 	return 0;
 }
