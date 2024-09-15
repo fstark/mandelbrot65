@@ -513,6 +513,16 @@ class font_t
 	static const int size = 64;
 
 	uint8_t font_[size*height];
+
+	/*	Intensity of each 4x4 block
+		i0 i1
+		i2 i3
+	*/
+
+	int i0_[64];
+	int i1_[64];
+	int i2_[64];
+	int i3_[64];
 public:
 	font_t( const char *name )
 	{
@@ -529,12 +539,89 @@ public:
 			exit(1);
 		}
 		fclose(f);
+
+		for (int i=0;i!=64;i++)
+			i0_[i] = i1_[i] = i2_[i] = i3_[i] = 0;
+
+		for (int i=0;i!=64;i++)
+		{
+			for (int line=0;line!=4;line++)
+			{
+				int v = font_[i*8+line];
+				for (int j=0;j!=4;j++)
+				{
+					i0_[i] += v&1;
+					v >>= 1;
+				}
+				for (int j=0;j!=4;j++)
+				{
+					i1_[i] += v&1;
+					v >>= 1;
+				}
+			}
+			for (int line=4;line!=8;line++)
+			{
+				int v = font_[i*8+line];
+				for (int j=0;j!=4;j++)
+				{
+					i2_[i] += v&1;
+					v >>= 1;
+				}
+				for (int j=0;j!=4;j++)
+				{
+					i3_[i] += v&1;
+					v >>= 1;
+				}
+			}
+		}
 	}
 
 	const uint8_t *get( int c ) const
 	{
 		c %= size;
 		return font_+c*height;
+	}
+
+	int dist( int c, int i0, int i1, int i2, int i3 ) const
+	{
+		c %= size;
+		int d0 = std::abs(i0_[c]-i0);
+		int d1 = std::abs(i1_[c]-i1);
+		int d2 = std::abs(i2_[c]-i2);
+		int d3 = std::abs(i3_[c]-i3);
+		return d0+d1+d2+d3;
+	}
+
+	const u_int8_t best( int i0, int i1, int i2, int i3 ) const
+	{
+		i0 = std::max( i0, 4 )-4;
+		i1 = std::max( i1, 4 )-4;
+		i2 = std::max( i2, 4 )-4;
+		i3 = std::max( i3, 4 )-4;
+
+		i0 /= 4;
+		i1 /= 4;
+		i2 /= 4;
+		i3 /= 4;
+		if (i0>16) i0 = 16;
+		if (i1>16) i1 = 16;
+		if (i2>16) i2 = 16;
+		if (i3>16) i3 = 16;
+
+		// Find best character match
+		int best = 0;
+		int best_dist = dist(0, i0, i1, i2, i3);
+		for (int i=1;i!=size;i++)
+		{
+			int d = dist(i, i0, i1, i2, i3);
+			if (d<best_dist)
+			{
+				best = i;
+				best_dist = d;
+			}
+		}
+
+		return best;
 	}
 };
 
@@ -687,6 +774,41 @@ void mandel( const place_t &place, ioutput &out )
 	std::cout << std::endl;
 }
 
+void mandelhr( const place_t &place, ioutput &out, const font_t &font )
+{
+	auto placehr = place;
+	placehr.rx_ = place.rx_.div2();
+	placehr.ry_ = place.ry_.div2();
+
+	out.output_start( place.description(), place.w_, place.h_ );
+	auto y = place.y_;
+	for (int i=0;i!=place.h_;i++)
+	{
+		auto x = place.x_;
+		for (int j=0;j!=place.w_;j++)
+		{
+			auto x0 = x;
+			auto y0 = y;
+			auto x1 = x + placehr.rx_;
+			auto y1 = y + placehr.ry_;
+
+			int it0 = iter(x0,y0,x0,y0);
+			int it1 = iter(x1,y0,x0,y1);
+			int it2 = iter(x0,y1,x1,y0);
+			int it3 = iter(x1,y1,x1,y1);
+
+			out.output( font.best( it0, it1, it2, it3 ), x, y );		
+
+			x = x + place.rx_;
+		}
+		y = y + place.ry_;
+		std::cout << i << " " << std::flush;
+	}
+	out.output_end();
+	std::cout << std::endl;
+}
+
+
 void julia( const place_t &place, fixed_t cx, fixed_t cy, ioutput &out )
 {
 	out.output_start( place.description(), place.w_, place.h_ );
@@ -740,29 +862,35 @@ int main()
 
 	place_t j_large(0,0,1,1,1024,1024);
 
-	for (int i=32;i!=0;i/=2)
+	for (int i=32;i!=1;i/=2)
 	{
 		place_t pl( 0,0,i,i,1024/i,1024/i );
-		mandel( pl, out );
+		mandelhr( pl, out, font );
 	}
 
-	for (int i=32;i!=0;i/=2)
-	{
-		place_t pl( 0,0,i,i,1024/i,1024/i );
-		julia( pl, -0.8, 0.156, out );
-	}
+	// for (int i=32;i!=0;i/=2)
+	// {
+	// 	place_t pl( 0,0,i,i,1024/i,1024/i );
+	// 	mandel( pl, out );
+	// }
 
-	for (int i=32;i!=0;i/=2)
-	{
-		place_t pl( 0,0,i,i,1024/i,1024/i );
-		julia( pl, -0.55, -0.64, out );
-	}
+	// for (int i=32;i!=0;i/=2)
+	// {
+	// 	place_t pl( 0,0,i,i,1024/i,1024/i );
+	// 	julia( pl, -0.8, 0.156, out );
+	// }
 
-	for (int i=32;i!=0;i/=2)
-	{
-		place_t pl( 0,0,i,i,1024/i,1024/i );
-		julia( pl, 0.27, 1.0/256, out );
-	}
+	// for (int i=32;i!=0;i/=2)
+	// {
+	// 	place_t pl( 0,0,i,i,1024/i,1024/i );
+	// 	julia( pl, -0.55, -0.64, out );
+	// }
+
+	// for (int i=32;i!=0;i/=2)
+	// {
+	// 	place_t pl( 0,0,i,i,1024/i,1024/i );
+	// 	julia( pl, 0.27, 1.0/256, out );
+	// }
 
 	// julia( j_large, -0.8, 0.156, out );
 	// julia( j_large, -0.55, -0.64, out );
