@@ -17,18 +17,19 @@ const int FSIZE_MAX=(1 << FSIZE) - 1;
 class fixed_t;
 std::ostream& operator<<(std::ostream& os, const fixed_t& f);
 
-
 // A 11 bits fixed point class (3+8)
+//	External sign + NaN
 class fixed_t
 {
-	bool sign_ : 1;
+	bool sign_;
+	bool nan_;
     unsigned int integer_ : ISIZE;
     unsigned int fractional_ : FSIZE;
 
 public:
-	fixed_t() : sign_(false), integer_(0), fractional_(0) {}
+	fixed_t() : sign_(false), integer_(0), fractional_(0), nan_(false) {}
 
-	fixed_t(bool sign, int integer, int fractional) : sign_(sign), integer_(integer), fractional_(fractional)
+	fixed_t(bool sign, int integer, int fractional, bool nan=false) : sign_(sign), integer_(integer), fractional_(fractional), nan_(nan)
 	{
 		// printf( "sign: %d, integer: %d, fractional: %d\n", sign, integer, fractional );
 		assert( integer >= 0 && integer <= ISIZE_MAX );
@@ -51,15 +52,14 @@ public:
 		}
 		if (integer>ISIZE_MAX)
 		{
-			*this = max_fixed();
+			*this = nan();
 			return;
 		}
-		*this = fixed_t(sign, integer, fractional);
+		*this = fixed_t(sign, integer, fractional,false);
 // printf( "%s\n", to_string().c_str() );
 	}
 
-	static fixed_t max_fixed() { return fixed_t(ISIZE_MAX, FSIZE_MAX); }
-	static fixed_t min_fixed() { return fixed_t(-ISIZE_MAX, FSIZE_MAX); }
+	static fixed_t nan() { return fixed_t(false,0,0,true); }
 	static fixed_t epsilon( int count=1 ) { return fixed_t(0, count); }
 
     std::array<uint8_t, 2> get() const
@@ -69,9 +69,9 @@ public:
 
 	std::string to_string() const
 	{
-		if (integer_ == ISIZE_MAX && fractional_ == FSIZE_MAX)
+		if (is_nan())
 		{
-			return "<MAX>";
+			return "<NaN>";
 		}
 		// return (sign_ ? "-" : "") + std::to_string(integer_ + fractional_ / (FSIZE_MAX+1.0))+"("+std::to_string(integer_)+":"+std::to_string(fractional_)+")";
 		return std::to_string(to_float())+"("+std::to_string(integer_)+":"+std::to_string(fractional_)+")";
@@ -79,24 +79,26 @@ public:
 
 	float to_float() const
 	{
+		assert( !is_nan() );
 		return (sign_ ? -1 : 1) * (integer_ + fractional_ / (FSIZE_MAX+1.0));
 	}
 
 	fixed_t set_sign(bool sign) const
 	{
-		return fixed_t(sign, integer_, fractional_);
+		return fixed_t(sign, integer_, fractional_,nan_);
 	}
 
-	bool is_max() const
+	bool is_nan() const
 	{
-		return integer_ == ISIZE_MAX && fractional_ == FSIZE_MAX;
+//		return integer_ == ISIZE_MAX && fractional_ == FSIZE_MAX;
+		return nan_;
 	}	
 
 	fixed_t times_positive( fixed_t other) const
 	{
-		if (is_max() || other.is_max())
+		if (is_nan() || other.is_nan())
 		{
-			return max_fixed();
+			return nan();
 		}
 		return to_float()*other.to_float();
 	}
@@ -128,6 +130,8 @@ public:
 
 	bool operator==(const fixed_t& other) const
 	{
+		assert( !is_nan() );
+		assert( !other.is_nan() );
 		return sign_ == other.sign_ && integer_ == other.integer_ && fractional_ == other.fractional_;
 	}
 
@@ -138,12 +142,12 @@ public:
 
 	fixed_t operator-() const
 	{
-		return fixed_t(!sign_, integer_, fractional_);
+		return fixed_t(!sign_, integer_, fractional_,nan_);
 	}
 
 	fixed_t abs() const
 	{
-		return fixed_t(false, integer_, fractional_);
+		return fixed_t(false, integer_, fractional_,nan_);
 	}
 
 	// Adds two positive numbers
@@ -161,7 +165,7 @@ public:
 		}
 		if (integer > ISIZE_MAX)
 		{
-			return max_fixed();
+			return nan();
 		}
 		return fixed_t(integer, fractional);
 	}
@@ -181,7 +185,7 @@ public:
 		}
 		if (integer < 0)
 		{
-			return min_fixed();
+			return nan();
 		}
 		return fixed_t(integer, fractional);
 	}
@@ -189,6 +193,11 @@ public:
 	fixed_t operator+(const fixed_t& other) const
 	{
 		// std::cout << "ADD " << *this << " + " << other << std::endl;
+
+		if (is_nan() || other.is_nan())
+		{
+			return nan();
+		}
 
 		//	Same sign addition
 		if (sign_ == other.sign_)
@@ -222,6 +231,8 @@ public:
 
 	fixed_t div2() const
 	{
+		assert( !is_nan() );
+
 		int integer = integer_;
 		int fractional = fractional_;
 
@@ -253,14 +264,14 @@ public:
 		fixed_t x = *this;
 		fixed_t y = other;
 		auto x2 = x.squared();
-		if (x2.is_max())
+		if (x2.is_nan())
 		{
-			return max_fixed();
+			return nan();
 		}
 		auto y2 = y.squared();
-		if (y2.is_max())
+		if (y2.is_nan())
 		{
-			return max_fixed();
+			return nan();
 		}
 		auto xmy2 = (x - y).squared();
 		if (x<y)
@@ -335,8 +346,8 @@ void test_times()
 	assert( fixed_t::epsilon(1).times(fixed_t::epsilon(1)) == fixed_t(0) );
 
 	//	Test saturation (max)
-	assert( fixed_t::max_fixed().times(fixed_t(1, 0)) == fixed_t::max_fixed() );
-	assert( fixed_t::max_fixed().times(fixed_t(0, 1)) == fixed_t::max_fixed() );
+	assert( fixed_t::nan().times(fixed_t(1, 0)).is_nan() );
+	assert( fixed_t::nan().times(fixed_t(0, 1)).is_nan() );
 }
 
 void test_plus()
@@ -361,17 +372,17 @@ void test_plus()
 	assert((fixed_t(0) + fixed_t(2)) == (fixed_t(2) + fixed_t(0)));
 
 	//	Test saturation (max)
-	assert( fixed_t::max_fixed() + fixed_t(1) == fixed_t::max_fixed() );
-	assert( fixed_t::max_fixed() + fixed_t::max_fixed() == fixed_t::max_fixed() );
-	assert( fixed_t::max_fixed() + fixed_t::epsilon() == fixed_t::max_fixed() );
+	assert( (fixed_t::nan() + fixed_t(1)).is_nan() );
+	assert( (fixed_t::nan() + fixed_t::nan()).is_nan() );
+	assert( (fixed_t::nan() + fixed_t::epsilon()).is_nan() );
 
 	//	Test we get to saturation
 	assert( fixed_t(ISIZE_MAX) + fixed_t::epsilon() == fixed_t(ISIZE_MAX,1) );
-	assert( fixed_t(ISIZE_MAX) + fixed_t(1) == fixed_t::max_fixed() );
+	assert( (fixed_t(ISIZE_MAX) + fixed_t(1)).is_nan() );
 
 	//	Iterate from 0 to max by eplison steps
 	fixed_t f(0);
-	while (f < fixed_t::max_fixed())
+	while (!f.is_nan())
 	{
 		f = f + fixed_t::epsilon();
 	}
@@ -384,7 +395,7 @@ void check_mul2( fixed_t a, fixed_t b )
 
 	if (fixed_t(2,211)<a || fixed_t(2,211)<b)
 	{
-		expected = fixed_t::max_fixed();
+		expected = fixed_t::nan();
 	}
 
 	if (fixed_t::epsilon(1)<(result-expected).abs())
@@ -399,8 +410,8 @@ void test_mul()
 	//	Test mul2
 	assert( fixed_t(1).mul2(fixed_t(1)) == fixed_t(2) );
 	assert( fixed_t(1).mul2(fixed_t(2)) == fixed_t(4) );
-	assert( fixed_t(1).mul2(fixed_t(3)) == fixed_t::max_fixed() );
-	assert( fixed_t(2).mul2(fixed_t(2)) == fixed_t::max_fixed() );
+	assert( (fixed_t(1).mul2(fixed_t(3))).is_nan() );
+	assert( (fixed_t(2).mul2(fixed_t(2))).is_nan() );
 	assert( fixed_t(2).mul2(fixed_t(0.5)) == fixed_t(2) );
 	assert( fixed_t(2).mul2(fixed_t::epsilon()) == fixed_t(0, 4) );
 	assert( fixed_t(-2).mul2(fixed_t(0.5)) == fixed_t(-2) );
@@ -416,10 +427,10 @@ void test_mul()
 
 	//	Iterate over all positive multiplication cases
 	fixed_t f(0);
-	while (f < fixed_t::max_fixed())
+	while (!f.is_nan())
 	{
 		fixed_t g(0);
-		while (g < fixed_t::max_fixed())
+		while (!g.is_nan())
 		{
 			check_mul2(f, g);
 			g = g + fixed_t::epsilon();
@@ -731,7 +742,7 @@ int iter( fixed_t x, fixed_t y, fixed_t zx, fixed_t zy )
 	fixed_t zx2 = zx.squared();
 	fixed_t zy2 = zy.squared();
 	int i = 0;
-	while (i < 250 && (zx2 + zy2) != fixed_t::max_fixed())
+	while (i < 250 && !(zx2 + zy2).is_nan())
 	{
 		zy = zx.mul2(zy) + y;
 		zx = zx2 - zy2 + x;
@@ -831,7 +842,7 @@ void julia( const place_t &place, fixed_t cx, fixed_t cy, ioutput &out )
 
 int main()
 {
-	// test_fixed();
+	test_fixed();
 
 	font_t font("s2513.d2");
 
@@ -868,29 +879,29 @@ int main()
 		mandelhr( pl, out, font );
 	}
 
-	// for (int i=32;i!=0;i/=2)
-	// {
-	// 	place_t pl( 0,0,i,i,1024/i,1024/i );
-	// 	mandel( pl, out );
-	// }
+	for (int i=32;i!=0;i/=2)
+	{
+		place_t pl( 0,0,i,i,1024/i,1024/i );
+		mandel( pl, out );
+	}
 
-	// for (int i=32;i!=0;i/=2)
-	// {
-	// 	place_t pl( 0,0,i,i,1024/i,1024/i );
-	// 	julia( pl, -0.8, 0.156, out );
-	// }
+	for (int i=32;i!=0;i/=2)
+	{
+		place_t pl( 0,0,i,i,1024/i,1024/i );
+		julia( pl, -0.8, 0.156, out );
+	}
 
-	// for (int i=32;i!=0;i/=2)
-	// {
-	// 	place_t pl( 0,0,i,i,1024/i,1024/i );
-	// 	julia( pl, -0.55, -0.64, out );
-	// }
+	for (int i=32;i!=0;i/=2)
+	{
+		place_t pl( 0,0,i,i,1024/i,1024/i );
+		julia( pl, -0.55, -0.64, out );
+	}
 
-	// for (int i=32;i!=0;i/=2)
-	// {
-	// 	place_t pl( 0,0,i,i,1024/i,1024/i );
-	// 	julia( pl, 0.27, 1.0/256, out );
-	// }
+	for (int i=32;i!=0;i/=2)
+	{
+		place_t pl( 0,0,i,i,1024/i,1024/i );
+		julia( pl, 0.27, 1.0/256, out );
+	}
 
 	// julia( j_large, -0.8, 0.156, out );
 	// julia( j_large, -0.55, -0.64, out );
