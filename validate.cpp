@@ -77,6 +77,15 @@ public:
 		return std::to_string(to_float())+"("+std::to_string(integer_)+":"+std::to_string(fractional_)+")";
 	}
 
+	std::string as_asm() const
+	{
+		uint16_t v = (sign_ ? 0x8000 : 0) | (nan_ ? 0x4000 : 0) | 0x1000 | ((integer_ << FSIZE) | fractional_)<<1;
+		//	Return v as a 5 digits strings with the hex numbers, little endian
+		char buffer[6];
+		sprintf(buffer, "%02X %02X", v&0xff, v>>8);
+		return buffer;
+	}
+
 	float to_float() const
 	{
 		assert( !is_nan() );
@@ -843,6 +852,51 @@ void julia( const place_t &place, fixed_t cx, fixed_t cy, ioutput &out )
 int main()
 {
 	test_fixed();
+
+	//
+	{
+		int num = 0;
+		int inc = 0;
+		int adrs = 4096;
+
+		for (int i=0;i!=800;i++)
+		{
+			printf( "%04X : %02X %02X %02X   %02X %02X %02X => %02X %02X\n", adrs, num&0xff, (num>>8)&0xff, (num>>16)&0xff, inc&0xff, (inc>>8)&0xff, (inc>>16)&0xff, ((num>>8)&0x7f)<<1, (((num>>8)&0x780)>>7)|0x10 );
+
+			num += inc;
+			inc++;
+			num += inc;
+
+			// if (adrs%16==0)
+			// 	printf( "\n%04X: ", adrs );
+			adrs += 2;
+
+			// uint16_t v = num>>8;
+			// printf( "%02X %02X ", (v&0x7f)<<1, ((v&0x780)>>7)|0x10 );
+
+		}
+		printf( "\n\n");
+	}
+
+	// find max square
+	fixed_t sq(0);
+	int adrs = 4096;
+	for (int i=0;i!=2048;i++)
+	{
+		auto sq2 = sq.squared();
+
+		if (adrs%16==0)
+			std::cout << std::endl << std::hex << adrs << " " << std::dec << ": ";
+		adrs += 2;
+
+		std::cout << sq2.as_asm() << " ";
+		if (sq2.is_nan())
+		{
+			std::cout << "Last square = " << i-1 << std::endl;
+			exit(0);
+		}
+		sq = sq + fixed_t::epsilon();
+	}
 
 	font_t font("s2513.d2");
 
