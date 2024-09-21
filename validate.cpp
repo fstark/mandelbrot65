@@ -67,22 +67,29 @@ public:
         return {static_cast<uint8_t>(integer_), static_cast<uint8_t>(fractional_)};
     }
 
-	std::string to_string() const
+	std::string to_string( bool verbose=true ) const
 	{
 		if (is_nan())
 		{
 			return "<NaN>";
 		}
 		// return (sign_ ? "-" : "") + std::to_string(integer_ + fractional_ / (FSIZE_MAX+1.0))+"("+std::to_string(integer_)+":"+std::to_string(fractional_)+")";
+		if (!verbose)
+			return (sign_ ? "-" : "") + std::to_string(integer_ + fractional_ / (FSIZE_MAX+1.0));
 		return std::to_string(to_float())+"("+std::to_string(integer_)+":"+std::to_string(fractional_)+")";
 	}
 
-	std::string as_asm() const
+	std::string as_asm( const std::string separator=" ", const std::string prefix="" ) const
 	{
+		if (nan_)
+		{
+			return prefix+"00"+separator+prefix+"00";
+		}
+
 		uint16_t v = (sign_ ? 0x8000 : 0) | (nan_ ? 0x4000 : 0) | 0x1000 | ((integer_ << FSIZE) | fractional_)<<1;
 		//	Return v as a 5 digits strings with the hex numbers, little endian
-		char buffer[6];
-		sprintf(buffer, "%02X %02X", v&0xff, v>>8);
+		char buffer[128];
+		sprintf(buffer, "%s%02X%s%s%02X", prefix.c_str(), v&0xff, separator.c_str(), prefix.c_str(), v>>8);
 		return buffer;
 	}
 
@@ -849,10 +856,30 @@ void julia( const place_t &place, fixed_t cx, fixed_t cy, ioutput &out )
 	std::cout << std::endl;
 }
 
+//	Generates test cases for the ASM version of ADD and SUB
+void gen_tests()
+{
+		std::cout << "TESTDATA" << ":" << std::endl;
+	//	Generates 100 pairs of fixed_t
+	for (int i=0;i!=100;i++)
+	{
+			// a random number between -8 and 8
+		float f0 = (rand()%16000)/1000.0-8;
+		float f1 = (rand()%16000)/1000.0-8;
+		fixed_t n0 = fixed_t(f0);
+		fixed_t n1 = fixed_t(f1);
+		std::cout << ".byte " << n0.as_asm(",","$") << "," << n1.as_asm(",","$") << "," << (n0+n1).as_asm(",","$")
+			<< "	;  " << n0.to_string(false) << " + " << n1.to_string(false) << " = " << (n0+n1).to_string(false) << std::endl;
+	}
+}
+
 int main()
 {
 	test_fixed();
 
+
+	gen_tests();
+	exit(0);
 	//
 	{
 		int num = 0;
@@ -869,10 +896,11 @@ int main()
 
 			// if (adrs%16==0)
 			// 	printf( "\n%04X: ", adrs );
-			adrs += 2;
-
 			// uint16_t v = num>>8;
 			// printf( "%02X %02X ", (v&0x7f)<<1, ((v&0x780)>>7)|0x10 );
+
+			adrs += 2;
+
 
 		}
 		printf( "\n\n");
