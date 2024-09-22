@@ -37,6 +37,8 @@ IT = $30		; Iteration counter
 
 TMP_DBG = $32
 
+PLACEPTR = $35
+
 ; Format of numbers (16 bits, stored little endian -- reversed from this drawing)
 ;         A                 X
 ; +-+-+-+-+-+-+-+-+ +-+-+-+-+-+-+-+-+
@@ -64,6 +66,7 @@ NANBIT = $01
 ECHO = $FFEF
 WOZMON = $FF00
 PRBYTE = $FFDC
+KBD = $D010
 KBDCR = $D011
 
 SQUARETABLE = $1000			; This table cannot be moved
@@ -105,56 +108,161 @@ SQUARETABLE_END = $2000		; End of table
 ; Z set if NaN
 ; #define SQUARE(NUM) LDY #0: LDA (NUM),Y: TAX: INY: LDA (NUM),Y: BIT NAN
 
+MAIN:
+.(
 	LDA #NANBIT
 	STA NAN   ; Bit mask for NaN
 
 	JSR PRINTINLINE
-.byte "Mandelbrot 65", $d, $d, 0
+.byte $d, $d
+.byte "        --== Mandelbrot 65 ==--  ", $d, $d
+.byte "A 6502 MANDELBROT & JULIA TIME WASTER", $d
+.byte "                        FOR YOUR APPLE 1", $d, $d
+; .byte "       AT ANYTIME PRESS 'SPACE' TO SKIP", $d, $d
+; .byte " '1'..'9' : DISPLAY A PRESET PLACE", $d
+; .byte "      'V' : DISPLAY COORDINATE OF PLACES"
+; .byte "      'A' : AUTOMATIC EXPLORATION MODE", $d, $d, $d
+; .byte "                     BY FRED STARK, 2024", $d
+.byte 0
 
 	JSR FILLSQUARES
 
-	; JMP TESTADD
-	; JMP TESTPRINT
-	; JMP TESTSQUARE
+	JSR INITPLACES
+LOOP:
+	JSR NEXTPLACE
+	JSR DRAWSET
+	JSR WAIT
+	JMP LOOP
+.)
 
-; Initialize variables
+WAIT:
+.(
+	LDX #8
+LOOP1:
+	TXA
+	PHA
+	LDY #0
+LOOP2:
+	LDX #0
+LOOP3:
+	LDA KBDCR
+	BMI DONE
+	DEX
+	BNE LOOP3
+	DEY
+	BNE LOOP2
+	PLA
+	TAX
+	DEX
+	BNE LOOP1
+	RTS
 
-; x= -2.093750(2:24) y= -1.125000(1:32) rx= 0.074219(0:19) ry= 0.093750(0:24)
-; x= D0 FB y= C0 FD rx= 26 00 ry= 30 00
+DONE:
+	PLA
+	LDA KBD			; Clear key
+	RTS
+.)
 
-		; X0 = -1.5
-	LDA #$FB
-	LDX #$D0
-	MSTOREAX(X0)
+NEXTPLACE:
+.(
+	LDA #$d
+	JSR ECHO
+	JSR ECHO
+	JSR ECHO
+	JSR ECHO
+	JSR ECHO
 
-	JSR DBG_AX
-	.byte "X0:", 0
+	LDY #0
 
-		; Y0 = -1
-	LDA #$FD
-	LDX #$C0
-	MSTOREAX(Y0)
+		; LOAD X0, Y0, DX, DY
+	LDA (PLACEPTR),Y
+	STA X0
+	INY
+	LDA (PLACEPTR),Y
+	STA X0+1
+	INY
 
-	JSR DBG_AX
-	.byte "Y0:", 0
+	; MLOADAX(X0)
+	; JSR DBG_AX
+	; .byte "X0=", 0
 
-		; DX = 0.05
-	LDA #$00
-	LDX #$26
-	MSTOREAX(DX)
+	LDA (PLACEPTR),Y
+	STA Y0
+	INY
+	LDA (PLACEPTR),Y
+	STA Y0+1
+	INY
 
-	JSR DBG_AX
-	.byte "DX:", 0
+	; MLOADAX(Y0)
+	; JSR DBG_AX
+	; .byte " Y0=", 0
 
-		; DY = 0.05
-	LDA #$00
-	LDX #$30
-	MSTOREAX(DY)
+	LDA (PLACEPTR),Y
+	STA DX
+	INY
+	LDA (PLACEPTR),Y
+	STA DX+1
+	INY
 
-	JSR DBG_AX
-	.byte "DY:", 0
+	; MLOADAX(DX)
+	; JSR DBG_AX
+	; .byte " DX=", 0
+
+	LDA (PLACEPTR),Y
+	STA DY
+	INY
+	LDA (PLACEPTR),Y
+	STA DY+1
+	INY
+
+	; MLOADAX(DY)
+	; JSR DBG_AX
+	; .byte " DY=", 0
 
 
+		; PRINT PLACE NAME
+	LDA #$d
+	JSR ECHO
+	JSR ECHO
+LOOP:
+	LDA (PLACEPTR),Y
+	BEQ DONE
+	INY
+	; JSR ECHO
+	JMP LOOP
+DONE:
+	INY
+	LDA #$d
+	JSR ECHO
+
+		; Increment PLACEPTR
+	CLC
+	TYA
+	ADC PLACEPTR
+	STA PLACEPTR
+	LDA PLACEPTR+1
+	ADC #0
+	STA PLACEPTR+1
+
+		; Check if end of places
+	LDY #0
+	LDA (PLACEPTR),Y
+	BEQ INITPLACES
+
+	RTS
+.)
+
+INITPLACES:
+.(
+	LDA #<PLACES
+	STA PLACEPTR
+	LDA #>PLACES
+	STA PLACEPTR+1
+	RTS
+.)
+
+
+DRAWSET:
 ; Draw mandelbrot
 .(
 	LDA #24
@@ -172,6 +280,19 @@ LOOP2:
 
 		; Get character
 	JSR CHARFROMIT
+
+		; To avoid scrolling when image is complete, we skip the last char
+	TAX
+	LDA SCRNY
+	CMP #1
+	BNE CONTINUE
+	LDA SCRNX
+	CMP #1
+	BNE CONTINUE
+	RTS
+
+CONTINUE:
+	TXA
 	JSR ECHO
 
 		; Move X to next position in set
@@ -198,15 +319,25 @@ LOOP2:
 	DEC SCRNY
 	BNE LOOP1
 
-LOOP:
-    LDA KBDCR           ;   Key pressed?
-    BPL LOOP            ;   No
+; LOOP:
+;     LDA KBDCR           ;   Key pressed?
+;     BPL LOOP            ;   No
 
-	JSR PRINTINLINE
-	.byte "DONE", $d, 0
-
-	JMP WOZMON
+	RTS
 .)
+
+PLACES:
+	.byte $D0, $FB, $C0, $FD, $26, $00, $30, $00, "MANDELBROT", 0
+	.byte $C0, $FE, $80, $FD, $10, $00, $10, $00, "ZOOM ON TOP", 0
+	.byte $26, $FF, $B0, $FD, $08, $00, $08, $00, "ZOOM MORE", 0
+	.byte $A2, $FF, $06, $FE, $04, $00, $04, $00, "CLOSER", 0
+	.byte $D8, $FF, $40, $FE, $02, $00, $02, $00, "MAX ZOOM", 0
+
+
+	.byte $CA, $FF, $E0, $FD, $02, $00, $02, $00, "UNNAMED", 0
+	.byte $CA, $FF, $40, $FE, $02, $00, $02, $00, "UNNAMED", 0
+	.byte $9A, $FD, $60, $FF, $02, $00, $02, $00, "UNNAMED", 0
+	.byte 0
 
 ; Increments PTR`
 INCPTR:
@@ -252,6 +383,7 @@ DBG_AX:
 .(
 	STA TMP_DBG
 	STX TMP_DBG+1
+	STY TMP_DBG+2
 	PLA
 	STA PTR
 	PLA
@@ -272,10 +404,11 @@ PRINTDONE:
 	LDA TMP_DBG
 	LDX TMP_DBG+1
 	JSR PRINT_AX
-	LDA #$d
-	JSR ECHO
+	; LDA #$d
+	; JSR ECHO
 	LDA TMP_DBG
 	LDX TMP_DBG+1
+	LDY TMP_DBG+2
 	RTS
 .)
 

@@ -883,8 +883,15 @@ void gen_tests()
 	}
 }
 
-int main()
+int main( int argc, char **argv )
 {
+
+	if (argc==2)
+	{
+		fixed_t f(atof(argv[1]));
+		std::cout << f.as_asm() << std::endl;
+		exit(0);
+	}
 
 	iter(fixed_t(-1.5),fixed_t(-1),fixed_t(-1.5),fixed_t(-1));
 
