@@ -8,6 +8,7 @@
 #include <sstream>
 #include <fstream>
 #include <algorithm>
+#include <cmath>
 
 const int ISIZE=3;
 const int ISIZE_MAX=(1 << ISIZE) - 1;
@@ -83,10 +84,15 @@ public:
 	{
 		if (nan_)
 		{
-			return prefix+"00"+separator+prefix+"00";
+			return prefix+"01"+separator+prefix+"00";
 		}
 
-		uint16_t v = (sign_ ? 0x8000 : 0) | (nan_ ? 0x4000 : 0) | 0x1000 | ((integer_ << FSIZE) | fractional_)<<1;
+		int16_t v0 = ((integer_ << FSIZE) | fractional_)<<1;
+
+		v0 *= (sign_ ? -1 : 1);
+
+		uint16_t v = v0;
+
 		//	Return v as a 5 digits strings with the hex numbers, little endian
 		char buffer[128];
 		sprintf(buffer, "%s%02X%s%s%02X", prefix.c_str(), v&0xff, separator.c_str(), prefix.c_str(), v>>8);
@@ -290,9 +296,11 @@ public:
 			return nan();
 		}
 		auto xmy2 = (x - y).squared();
-		if (x<y)
-			return y2-xmy2+x2;
-		return x2-xmy2+y2;
+//### WARN CHANGED
+		// if (x<y)
+		// 	return y2-xmy2+x2;
+		// return x2-xmy2+y2;
+		return -xmy2 + x2 + y2;
 	}
 };
 
@@ -748,7 +756,8 @@ struct place_t
 	std::string description() const
 	{
 		std::stringstream ss;
-		ss << "x= " << x_ << " y= " << y_ << " rx= " << rx_ << " ry= " << ry_;
+		ss << "x= " << x_ << " y= " << y_ << " rx= " << rx_ << " ry= " << ry_ << "\n";
+		ss << "x= " << x_.as_asm() << " y= " << y_.as_asm() << " rx= " << rx_.as_asm() << " ry= " << ry_.as_asm();
 		return ss.str();
 	}
 };
@@ -783,6 +792,7 @@ char palette( int i )
 
 void mandel( const place_t &place, ioutput &out )
 {
+	std::cout << place.description() << "\n";
 	out.output_start( place.description(), place.w_, place.h_ );
 	auto y = place.y_;
 	for (int i=0;i!=place.h_;i++)
@@ -875,11 +885,14 @@ void gen_tests()
 
 int main()
 {
+
+	iter(fixed_t(-1.5),fixed_t(-1),fixed_t(-1.5),fixed_t(-1));
+
 	test_fixed();
 
 
 	gen_tests();
-	exit(0);
+	// exit(0);
 	//
 	{
 		int num = 0;
@@ -907,6 +920,7 @@ int main()
 	}
 
 	// find max square
+#if 0
 	fixed_t sq(0);
 	int adrs = 4096;
 	for (int i=0;i!=2048;i++)
@@ -925,6 +939,7 @@ int main()
 		}
 		sq = sq + fixed_t::epsilon();
 	}
+#endif
 
 	font_t font("s2513.d2");
 
@@ -941,8 +956,8 @@ int main()
 	place_t j1(0.8,0,12,20);
 
 	place_t p0(-0.61,0,1,1,576,512);
-	// mandel( p0, out );
 
+ mandel( p1, out );
 
 	// mandel( p1, out );
 	// mandel( p2, out );
