@@ -15,4 +15,5 @@ mandelbrot65.o65: mandelbrot65.asm
 	xa -C -P mandelbrot65.lst -XCA65 -o mandelbrot65.o65 mandelbrot65.asm
 
 mame: mandelbrot65.snp
-	mame -debug apple1 -ui_active -resolution 640x480 -snapshot mandelbrot65.snp
+	mame -video opengl -debug apple1 -ui_active -resolution 640x480 -snapshot mandelbrot65.snp -rompath ~/mame/roms -ui_active
+#	mame -debug apple1 -ui_active -resolution 640x480 -snapshot mandelbrot65.snp

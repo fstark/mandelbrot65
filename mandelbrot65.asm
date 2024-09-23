@@ -42,6 +42,23 @@ PLACEPTR = $35
 SEED = $37
 FREQ = $38
 
+NEXTX = $39		; Next positiomn when auto zoom
+NEXTY = $3B
+NEXTDX = $3D	; Next delta when auto zoom
+NEXTDY = $3F
+
+		; Default Mandelbrot coordinates
+INITALX = $FBD0
+INITALY = $FDC0
+INITIALDX = $0026
+INITIALDY = $0030
+
+MODE = $40		; App mode
+MODEVISIT = $00	; Visit mode
+MODEAUTO = $01	; Auto mode
+
+		; 16 bits number
+
 	; 16 bits number
 ; Format of numbers (16 bits, stored little endian -- reversed from this drawing)
 ;         A                 X
@@ -107,16 +124,22 @@ SQUARETABLE_END = $2000		; End of table
 	; Restore (A,X) from stack
 #define MPULLAX PLA: TAX: PLA
 
-; Load square of number in (A,X)
-; Does not manage NaNs
-; Z set if NaN
-; #define SQUARE(NUM) LDY #0: LDA (NUM),Y: TAX: INY: LDA (NUM),Y: BIT NAN
 
+;-----------------------------------------------------------------------------
+; Main loop
+;-----------------------------------------------------------------------------
 MAIN:
 .(
+		; Initialize ZP constants
 	LDA #NANBIT
 	STA NAN   ; Bit mask for NaN
 
+		; Initialize ZP variables
+	LDA #MODEVISIT
+	LDA #MODEAUTO
+	STA MODE
+
+		; Display msg
 	JSR PRINTINLINE
 .byte $d, $d
 .byte "        --== Mandelbrot 65 ==--  ", $d, $d
@@ -138,15 +161,160 @@ LOOP:
 	BPL LOOP
 	LDA KBD
 
-		; Computer Square table
+		; Create Square table
 	JSR FILLSQUARES
 
+	LDA MODE
+	CMP #MODEVISIT
+	BNE SKIP1
+	JMP VISIT
+SKIP1:
+	CMP #MODEAUTO
+	BNE SKIP2
+	JMP AUTO
+SKIP2:
+	JMP LOOP
+.)
+
+VISIT:
+.(
 	JSR INITPLACES
-MAINLOOP:
+LOOP:
 	JSR NEXTPLACE
 	JSR DRAWSET
 	JSR WAIT
-	JMP MAINLOOP
+	JMP LOOP
+.)
+
+DEFAULTNEXT:
+.(
+	LDA #<INITALX
+	STA NEXTX
+	LDA #>INITALX
+	STA NEXTX+1
+
+	LDA #<INITALY
+	STA NEXTY
+	LDA #>INITALY
+	STA NEXTY+1
+
+	LDA #<INITIALDX
+	STA NEXTDX
+	LDA #>INITIALDX
+	STA NEXTDX+1
+
+	LDA #<INITIALDY
+	STA NEXTDY
+	LDA #>INITIALDY
+	STA NEXTDY+1
+
+	RTS
+.)
+
+COPYNEXT:
+.(
+	LDA NEXTX
+	STA X0
+	LDA NEXTX+1
+	STA X0+1
+
+	LDA NEXTY
+	STA Y0
+	LDA NEXTY+1
+	STA Y0+1
+
+	LDA NEXTDX
+	STA DX
+	LDA NEXTDX+1
+	STA DX+1
+
+	LDA NEXTDY
+	STA DY
+	LDA NEXTDY+1
+	STA DY+1
+
+	RTS
+.)
+
+; Only works for zooms where DX<128 (ie: all of them)
+SELECTNEXT:
+.(
+	INC FREQ
+	LDA FREQ
+	JSR RNDCHOICE
+	BNE SKIP
+
+	LDA DX
+	CMP #$80
+	ROR
+	CMP #1
+	BEQ SKIP		; Zoom is too high
+	AND #$FE
+	STA NEXTDX
+	LDA DX+1
+	STA NEXTDX+1
+
+	LDA DY
+	CMP #$80
+	ROR
+	CMP #1
+	BEQ SKIP		; Zoom is too high
+	AND #$FE
+	STA NEXTDY
+	LDA DY+1
+	STA NEXTDY+1
+
+	LDA X
+	STA NEXTX
+	LDA X+1
+	STA NEXTX+1
+
+					; Remove 20x NEXTDX to NEXTX
+	LDX #20
+LOOP1:
+	LDA NEXTX
+	SEC
+	SBC NEXTDX
+	STA NEXTX
+	LDA NEXTX+1
+	SBC NEXTDX+1
+	STA NEXTX+1
+	DEX
+	BNE LOOP1
+
+					; Remove 12x NEXTDY to NEXTY
+	LDX #12
+LOOP2:
+	LDA NEXTY
+	SEC
+	SBC NEXTDY
+	STA NEXTY
+	LDA NEXTY+1
+	SBC NEXTDY+1
+	STA NEXTY+1
+	DEX
+	BNE LOOP2
+
+	; LDA #$d
+	; JSR ECHO
+	; JSR ECHO
+	; JSR ECHO
+	; JSR ECHO
+SKIP:
+	RTS
+.)
+
+AUTO:
+.(
+	JSR DEFAULTNEXT		; Starts a mandelbrot
+LOOP:
+	JSR COPYNEXT		; Go to next place
+	JSR DEFAULTNEXT		; If we don't find a new spot
+						; We go back to Mandelbrot
+	JSR DRAWSET
+	JSR WAIT
+
+	JMP LOOP
 .)
 
 WAIT:
@@ -348,23 +516,16 @@ CONTINUE:
 	TXA
 	JSR ECHO
 
-		; Maybe this is the new zoom
+		; Maybe this could be the new zoom ?
 	CMP #'='
 	BNE SKIP
-	INC FREQ
-	LDA FREQ
-	JSR RNDCHOICE
+
+		; Are we in auto mode ?
+	LDA MODE
+	CMP #MODEAUTO
 	BNE SKIP
 
-		; This is the potential new zoom
-	
-
-	; LDA #$d
-	; JSR ECHO
-	; JSR ECHO
-	; JSR ECHO
-	; JSR ECHO
-
+	JSR SELECTNEXT
 SKIP:
 
 		; Move X to next position in set
