@@ -39,6 +39,10 @@ TMP_DBG = $32
 
 PLACEPTR = $35
 
+SEED = $37
+FREQ = $38
+
+	; 16 bits number
 ; Format of numbers (16 bits, stored little endian -- reversed from this drawing)
 ;         A                 X
 ; +-+-+-+-+-+-+-+-+ +-+-+-+-+-+-+-+-+
@@ -123,16 +127,26 @@ MAIN:
 ; .byte "      'V' : DISPLAY COORDINATE OF PLACES"
 ; .byte "      'A' : AUTOMATIC EXPLORATION MODE", $d, $d, $d
 ; .byte "                     BY FRED STARK, 2024", $d
+.byte "  (PRESS ANY KEY TO START)", $d
 .byte 0
 
+		; Wait for key and init SEED
+	LDA KBD
+LOOP:
+	INC SEED
+	LDA KBDCR
+	BPL LOOP
+	LDA KBD
+
+		; Computer Square table
 	JSR FILLSQUARES
 
 	JSR INITPLACES
-LOOP:
+MAINLOOP:
 	JSR NEXTPLACE
 	JSR DRAWSET
 	JSR WAIT
-	JMP LOOP
+	JMP MAINLOOP
 .)
 
 WAIT:
@@ -252,6 +266,42 @@ DONE:
 	RTS
 .)
 
+;-----------------------------------------------------------------------------
+; Return a random number in A
+;-----------------------------------------------------------------------------
+RANDOM:
+.(
+    LDA SEED
+    ASL
+    BCC SKIP
+    EOR #$1d
+SKIP:
+	sta SEED
+	RTS
+.)
+
+;-----------------------------------------------------------------------------
+; Sets Z 1/A times
+;-----------------------------------------------------------------------------
+RNDCHOICE:
+.(
+	TAX				; X = FREQ
+	JSR RANDOM
+	TAY				; Y = RANDOM
+	TXA				; A = FREQ
+LOOP:
+	DEX
+	BNE SKIP		; Skip if not last
+	TAX				; Reset FREQ
+SKIP:
+	DEY
+	BNE LOOP
+	TXA				; If X will be 1 1/FREQ times
+	CMP #1
+DONE:
+	RTS
+.)
+
 INITPLACES:
 .(
 	LDA #<PLACES
@@ -265,6 +315,9 @@ INITPLACES:
 DRAWSET:
 ; Draw mandelbrot
 .(
+	LDA #0
+	STA FREQ
+
 	LDA #24
 	STA SCRNY
 	MLOADAX(Y0)
@@ -294,6 +347,25 @@ LOOP2:
 CONTINUE:
 	TXA
 	JSR ECHO
+
+		; Maybe this is the new zoom
+	CMP #'='
+	BNE SKIP
+	INC FREQ
+	LDA FREQ
+	JSR RNDCHOICE
+	BNE SKIP
+
+		; This is the potential new zoom
+	
+
+	; LDA #$d
+	; JSR ECHO
+	; JSR ECHO
+	; JSR ECHO
+	; JSR ECHO
+
+SKIP:
 
 		; Move X to next position in set
 	LDA DX
