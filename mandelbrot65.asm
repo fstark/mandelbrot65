@@ -1,3 +1,6 @@
+#define noTESTS
+#define noPLACES
+
 MARKER = $FF
 
 * = $0280
@@ -53,9 +56,8 @@ INITALY = $FDC0
 INITIALDX = $0026
 INITIALDY = $0030
 
-MODE = $40		; App mode
-MODEVISIT = $00	; Visit mode
-MODEAUTO = $01	; Auto mode
+ZOOMLEVEL = $42	; 0, 1, 2, 3 or 4
+NEXTZOOMLEVEL = $43
 
 		; 16 bits number
 
@@ -134,10 +136,6 @@ MAIN:
 	LDA #NANBIT
 	STA NAN   ; Bit mask for NaN
 
-		; Initialize ZP variables
-	LDA #MODEVISIT
-	LDA #MODEAUTO
-	STA MODE
 
 		; Display msg
 	JSR PRINTINLINE
@@ -145,12 +143,8 @@ MAIN:
 .byte "        --== Mandelbrot 65 ==--  ", $d, $d
 .byte "A 6502 MANDELBROT & JULIA TIME WASTER", $d
 .byte "                        FOR YOUR APPLE 1", $d, $d
-; .byte "       AT ANYTIME PRESS 'SPACE' TO SKIP", $d, $d
-; .byte " '1'..'9' : DISPLAY A PRESET PLACE", $d
-; .byte "      'V' : DISPLAY COORDINATE OF PLACES"
-; .byte "      'A' : AUTOMATIC EXPLORATION MODE", $d, $d, $d
-; .byte "                     BY FRED STARK, 2024", $d
-.byte "  (PRESS ANY KEY TO START)", $d
+.byte "                     BY FRED STARK, 2024", $d
+.byte "        (PRESS ANY KEY TO START)", $d
 .byte 0
 
 		; Wait for key and init SEED
@@ -164,27 +158,23 @@ LOOP:
 		; Create Square table
 	JSR FILLSQUARES
 
-	LDA MODE
-	CMP #MODEVISIT
-	BNE SKIP1
-	JMP VISIT
-SKIP1:
-	CMP #MODEAUTO
-	BNE SKIP2
 	JMP AUTO
-SKIP2:
-	JMP LOOP
 .)
 
+#ifdef PLACES
 VISIT:
 .(
 	JSR INITPLACES
 LOOP:
 	JSR NEXTPLACE
+	LDA #$d
+	JSR ECHO
+	JSR ECHO
 	JSR DRAWSET
 	JSR WAIT
 	JMP LOOP
 .)
+#endif
 
 DEFAULTNEXT:
 .(
@@ -207,6 +197,9 @@ DEFAULTNEXT:
 	STA NEXTDY
 	LDA #>INITIALDY
 	STA NEXTDY+1
+
+	LDA #0
+	STA NEXTZOOMLEVEL
 
 	RTS
 .)
@@ -232,6 +225,9 @@ COPYNEXT:
 	STA DY
 	LDA NEXTDY+1
 	STA DY+1
+
+	LDA NEXTZOOMLEVEL
+	STA ZOOMLEVEL
 
 	RTS
 .)
@@ -269,6 +265,11 @@ SELECTNEXT:
 	LDA X+1
 	STA NEXTX+1
 
+	LDA Y
+	STA NEXTY
+	LDA Y+1
+	STA NEXTY+1
+
 					; Remove 20x NEXTDX to NEXTX
 	LDX #20
 LOOP1:
@@ -295,12 +296,43 @@ LOOP2:
 	DEX
 	BNE LOOP2
 
+	LDA ZOOMLEVEL
+	STA NEXTZOOMLEVEL
+	INC NEXTZOOMLEVEL
+
+	; JSR DBGNEXT
+
 	; LDA #$d
 	; JSR ECHO
 	; JSR ECHO
 	; JSR ECHO
 	; JSR ECHO
 SKIP:
+	RTS
+.)
+
+DBGNEXT:
+.(
+	LDA #$d
+	JSR ECHO
+	JSR ECHO
+	MLOADAX(NEXTX)
+	JSR PRINT_AX
+	LDA #' '
+	JSR ECHO
+	MLOADAX(NEXTY)
+	JSR PRINT_AX
+	LDA #' '
+	JSR ECHO
+	MLOADAX(NEXTDX)
+	JSR PRINT_AX
+	LDA #' '
+	JSR ECHO
+	MLOADAX(NEXTDY)
+	JSR PRINT_AX
+	LDA #$d
+	JSR ECHO
+	JSR ECHO
 	RTS
 .)
 
@@ -311,6 +343,9 @@ LOOP:
 	JSR COPYNEXT		; Go to next place
 	JSR DEFAULTNEXT		; If we don't find a new spot
 						; We go back to Mandelbrot
+	LDA #$d
+	JSR ECHO
+	JSR ECHO
 	JSR DRAWSET
 	JSR WAIT
 
@@ -344,6 +379,8 @@ DONE:
 	LDA KBD			; Clear key
 	RTS
 .)
+
+#ifdef PLACES
 
 NEXTPLACE:
 .(
@@ -434,6 +471,8 @@ DONE:
 	RTS
 .)
 
+#endif
+
 ;-----------------------------------------------------------------------------
 ; Return a random number in A
 ;-----------------------------------------------------------------------------
@@ -470,6 +509,8 @@ DONE:
 	RTS
 .)
 
+#ifdef PLACES
+
 INITPLACES:
 .(
 	LDA #<PLACES
@@ -479,6 +520,7 @@ INITPLACES:
 	RTS
 .)
 
+#endif
 
 DRAWSET:
 ; Draw mandelbrot
@@ -517,17 +559,16 @@ CONTINUE:
 	JSR ECHO
 
 		; Maybe this could be the new zoom ?
-	CMP #'='
-	BNE SKIP
-
-		; Are we in auto mode ?
-	LDA MODE
-	CMP #MODEAUTO
-	BNE SKIP
+	LDA IT
+	LDY ZOOMLEVEL
+	CMP ZOOMTRIGGERMIN,Y
+	BMI SKIP
+	CMP ZOOMTRIGGERMAX,Y
+	BPL SKIP
 
 	JSR SELECTNEXT
-SKIP:
 
+SKIP:
 		; Move X to next position in set
 	LDA DX
 	CLC
@@ -559,6 +600,8 @@ SKIP:
 	RTS
 .)
 
+#ifdef PLACES
+
 PLACES:
 	.byte $D0, $FB, $C0, $FD, $26, $00, $30, $00, "MANDELBROT", 0
 	.byte $C0, $FE, $80, $FD, $10, $00, $10, $00, "ZOOM ON TOP", 0
@@ -571,6 +614,8 @@ PLACES:
 	.byte $CA, $FF, $40, $FE, $02, $00, $02, $00, "UNNAMED", 0
 	.byte $9A, $FD, $60, $FF, $02, $00, $02, $00, "UNNAMED", 0
 	.byte 0
+
+#endif
 
 ; Increments PTR`
 INCPTR:
@@ -680,9 +725,10 @@ LOOP:
 		; Increment iteration
 	INC IT
 
-		; Stop at 40
-	LDA IT
-	CMP #42
+		; Stop at 42
+	LDY ZOOMLEVEL
+	LDA MAXITER,Y
+	CMP IT
 	BNE LOOP
 
 DONE:
@@ -876,20 +922,37 @@ DONE:
 CHARFROMIT:
 .(
 	LDA IT
-	LSR				; Div by 2
-	CMP #19+3
-	BCC INDEX
-	LDA #'#'
-	RTS
-INDEX:
+	LDY ZOOMLEVEL
+	CLC
+	ADC PALETTEDELTA,Y	; A = IT + PALETTEDELTA[ZOOMLEVEL]
 	TAY
-	LDA PALETTE,Y
-DONE:
+	LDA PALETTE,Y		; Correct palette entry
 	RTS
 .)
 PALETTE:
-	.byte "    .,'~=+:;[/<*?&o0x#"
+	; .byte "    .,'~=+:;[/<*?&o0x#"
+	; .byte "12345   ..,,''~~==++::;;[[//<<**??&&OO00X##"
+	; .byte " ..,,'''~~~===+++:::;;;[[//<<**???&&OO00XX "
+	;   .byte " 01234567890123456789012345678901234567890 "
+	; .byte " ..,,''~~==++::;;[[//<<**??&&OO00XX##      "
+	; .byte " .,'~=+:;[/<**??&&OO000XXXX############### "
+	.byte " .,'~=+:;[/<*?&O0X# XXXXXXXXXXXXXXXXXXXX"
+	.byte " ..,'~==+:;[[/<*??&OO0X# XXXXXXXXXXXXXXX"
+	.byte " ..,,''~==+::;[[/<<**??&OO0X# XXXXXXXXXX"
+	.byte " ..,,''~~==++::;[[/<<**??&&OO00XX# XXXXX"
+	.byte " ...,,'''~~==++::;;[[//<<***??&&OO00XX# "
 
+MAXITER:
+	.byte 19, 24, 29, 34, 39
+
+ZOOMTRIGGERMIN:
+	.byte 15, 17, 18, 19, 20
+
+ZOOMTRIGGERMAX:
+	.byte 19, 19, 20, 21, 22
+
+PALETTEDELTA:
+	.byte 0, 40, 80, 120, 160
 
 ;-----------------------------------------------------------------------------
 ; Fill square table with squares of numbers
@@ -1231,6 +1294,8 @@ MAKENAN:
 	RTS
 .)
 
+#ifdef TESTS
+
 ;-----------------------------------------------------------------------------
 ; Print A as an HEX value
 ; Does not trash A
@@ -1550,10 +1615,11 @@ TESTDATA:
 .byte $A2,$F3,$DC,$FC,$7E,$F0	;  -6.183594 + -1.570312 = -7.753906
 .byte $4A,$FC,$06,$0E,$50,$0A	;  -1.855469 + 7.011719 = 5.156250
 .byte $DC,$FF,$0E,$0F,$EA,$0E	;  -0.070312 + 7.527344 = 7.457031
-.byte $FF
+.byte MARKER
 
 TESTSQUAREDATA:
 .byte $C6,$0A,$FC,$F0,$C2,$FB	;  5.386719 + -7.507812 = -2.121094
 .byte $96,$F7,$AC,$0C,$42,$04	;  -4.207031 + 6.335938 = 2.128906
 .byte $C4,$F2,$C6,$F5
-.byte $ff
+.byte MARKER
+#endif
