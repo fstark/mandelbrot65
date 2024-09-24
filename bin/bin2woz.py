@@ -14,6 +14,6 @@ def binary_to_mozmon(binary_file_path, start_address=0x0280):
     return '\n'.join(output_lines)
 
 if __name__ == "__main__":
-    binary_file_path = 'a.o65'  # Replace with your binary file path
+    binary_file_path = 'mandelbrot65.o65'  # Replace with your binary file path
     mozmon_output = binary_to_mozmon(binary_file_path)
     print(mozmon_output)

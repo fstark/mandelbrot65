@@ -1,32 +1,22 @@
-# mandelbrot65
-Mandelbrot calculation on a 6502
+# An 6502 assembly Mandelbrot drawing for the Apple1
 
-# Locations
+The title says it all. This is the fastest Mandelbrot calculator for the Apple1. At minimum zoom, it computes the Mandelbrot set as fast as the Apple1 can display it.
 
-Locations are descirbed by:
+# How do I get it?
 
-a name : the name displayed on top of the screen during the calculation
-a type : mandelbrot or juila
-the location of the top-left point
-the steps in X and Y
-the maximum iterations (?)
+This demo as been desgined for Aberco/SiliconInsider Apple1 ROM card.
 
-[-0.75,-0.75] 0.0625 [16/256]
-[0.289,-0.555] 0.0078 [2/256]
-[-0.92,-0.28] 0.00390625 [1/256]
+If you want to use the demo standalone, use either the binary file:
 
+[mandelbrot65.o65](mandelbrot65.o65) or the [Hex file](mandebrot65.hex).
 
-Mandelbrot calculation on a 6502
+# How do I run it?
 
-# Locations
+The demo is made to be loaded at addrss 0x0280 and run with a ``280R`` (or launched from the menu of the Apple1 1 ROM card).
 
-Locations are described by:
+The demo will wait for a key press (to initialize its internal random number generator) then draw a Mandelbrot set and perform a series of 4 level of zooms.
 
-| Name | Type | Top-Left Point | Steps (X, Y) | Max Iterations |
-|------|------|----------------|--------------|----------------|
-| MANDELBROT OVERVIEW | M | 0.0625 | 16/256 |
+# Why?
 
-""
+We wanted to include a Mandelbrot demo on the ROM card, but the existing demos were using AppleSoft Basic, which will not be present on the 32K version of the card. I wasn't able to find a good version of Mandelbrot, so decided to write one.
 
-
-"MANDELBROT OVERVIEW"
