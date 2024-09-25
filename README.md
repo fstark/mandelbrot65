@@ -16,7 +16,17 @@ The demo is made to be loaded at addrss 0x0280 and run with a ``280R`` (or launc
 
 The demo will wait for a key press (to initialize its internal random number generator) then draw a Mandelbrot set and perform a series of 4 level of zooms.
 
-# Why?
+# How do I build it?
+
+Use the xa assembler and the top level Makefile.
+
+``make`` will make the binary and the hex file.
+``make mandelbrot.o65`` will make the binary only.
+``make clean`` to remove binaries and compilation artificats.
+
+The content of ``otherz`` directory contains a C++ program that was used to validate during the development. It is trash undocumented code (but ahs been very helpful).
+
+# Why did you do this?
 
 We wanted to include a Mandelbrot demo on the ROM card, but the existing demos were using AppleSoft Basic, which will not be present on the 32K version of the card. I wasn't able to find a good version of Mandelbrot, so decided to write one.
 
