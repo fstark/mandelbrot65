@@ -8,17 +8,38 @@
 
 #define noDEBUG		; Define DEBUG to include some debugging support
 
-MARKER = $FF
+;-----------------------------------------------------------------------------
+; Apple1 ROM & Hardware constants
+;-----------------------------------------------------------------------------
 
-FACC = $00
+ECHO 	= $FFEF
+WOZMON 	= $FF00
+PRBYTE 	= $FFDC
+KBD 	= $D010
+KBDCR 	= $D011
+
+;-----------------------------------------------------------------------------
+; Zero page variables
+;-----------------------------------------------------------------------------
+
+FACC = $00			; Fixed accumulator, used to address the square table
 
 NUM = $02  ; 3 bytes
 INCR = $05 ; 3 bytes
+
 PTR = $08
 TMP = $0A
 NAN = $0B
-SCRNX = $0C
+
+SCRNX = $0C	        ; When iterating, the counter of lines and columns left to draw
 SCRNY = $0D
+
+ZX = $28		; X in current iteration
+ZY = $2A		; Y in current iteration
+ZX2 = $2C		; X^2 in current iteration
+ZY2 = $2E		; Y^2 in current iteration
+IT = $30		; Iteration counter
+
 
 X0 = $0E
 Y0 = $10
@@ -28,44 +49,35 @@ DY = $14
 X = $16			; Current position in the set
 Y = $18
 
-TMP1 = $1A
-TMP2 = $1C
-
-PTR2 = $1E
-
-NUM1 = $20
-NUM2 = $22
-RES1 = $24
-RES2 = $26
-
-ZX = $28		; X in current iteration
-ZY = $2A		; Y in current iteration
-ZX2 = $2C		; X^2 in current iteration
-ZY2 = $2E		; Y^2 in current iteration
-IT = $30		; Iteration counter
-
 PLACEPTR = $35
 
 SEED = $37
 FREQ = $38
 
-NEXTX = $39		; Next positiomn when auto zoom
+NEXTX = $39		; Next position when auto zoom
 NEXTY = $3B
 NEXTDX = $3D	; Next delta when auto zoom
 NEXTDY = $3F
 
-		; Default Mandelbrot coordinates
+
+ZOOMLEVEL = $42	; 0, 1, 2, 3 or 4
+NEXTZOOMLEVEL = $43
+
+;-----------------------------------------------------------------------------
+; Constants
+;-----------------------------------------------------------------------------
+
+
+; Default Mandelbrot coordinates
 INITALX = $FBD0
 INITALY = $FDC0
 INITIALDX = $0026
 INITIALDY = $0030
 
-ZOOMLEVEL = $42	; 0, 1, 2, 3 or 4
-NEXTZOOMLEVEL = $43
+; Time to wait between two mandelbrot displays in "rought seconds"
+WAITIME = 4
 
-		; 16 bits number
-
-	; 16 bits number
+; 16 bits number
 ; Format of numbers (16 bits, stored little endian -- reversed from this drawing)
 ;         A                 X
 ; +-+-+-+-+-+-+-+-+ +-+-+-+-+-+-+-+-+
@@ -83,21 +95,21 @@ NEXTZOOMLEVEL = $43
 ; If S!=V the overflow
 ; Square table is at 00010000 00000000
 ;                 to 00011111 11111111
-; Numbers in the form of 00001nnn nnnnnnn0 have squares that overflow
-; so square table is centered at 00011000 00000000 (####TODO)
+; Numbers in the form of 00001nnn nnnnnnn0 have squares that overflow,
+; so there is opportunity to either squeeze more numbers in a rewrite (3.9 fixed point)
+; or using less memory for the table
 
 SIGNBIT = $80
 OVFBIT = $10
 NANBIT = $01
 
-ECHO = $FFEF
-WOZMON = $FF00
-PRBYTE = $FFDC
-KBD = $D010
-KBDCR = $D011
-
 SQUARETABLE = $1000			; This table cannot be moved
 SQUARETABLE_END = $2000		; End of table
+
+
+;-----------------------------------------------------------------------------
+; Couple of macros easing the manipulation of 16 bits numbers
+;-----------------------------------------------------------------------------
 
 	; Loads A number into AX
 #define MLOADAX(NUM) LDX NUM: LDA NUM+1
@@ -189,32 +201,37 @@ LOOP:
 	JSR FILLSQUARES
 
 		; Goes in AUTO mode
-	JMP AUTO
+	JMP MANDELAUTO
 .)
 
 ;-----------------------------------------------------------------------------
 ; Display and zooms in the mandelbrot set
 ;-----------------------------------------------------------------------------
-AUTO:
+MANDELAUTO:
 .(
-	JSR DEFAULTNEXT		; Starts a mandelbrot
+	JSR INITIALPLACE	; Starts a mandelbrot
+
 LOOP:
-	JSR COPYNEXT		; Go to next place
-	JSR DEFAULTNEXT		; If we don't find a new spot
+	JSR GOTOPLACE		; Go to next place
+	JSR INITIALPLACE	; If we don't find a new spot
 						; We go back to Mandelbrot
-	LDA #$d
+
+	LDA #$d				; A couple of lines between drawings
 	JSR ECHO
 	JSR ECHO
-	JSR DRAWSET
-	JSR WAIT
+
+	JSR DRAWSET			; Draw the mandelbrot set & pick a new spot
+
+	JSR WAIT			; 4 seconds or a keypress
+	BNE MANDELAUTO		; If non-space pressed, restart full mandelbrot
 
 	JMP LOOP
 .)
 
 ;-----------------------------------------------------------------------------
-; Fills NEXTX/NEXTY/NEXTDX/NEXTDY/NEXTZOOMLEVEL with default inital values
+; Fills ZP variables with the initial values
 ;-----------------------------------------------------------------------------
-DEFAULTNEXT:
+INITIALPLACE:
 .(
 	LDA #<INITALX
 	STA NEXTX
@@ -246,7 +263,7 @@ DEFAULTNEXT:
 ; Copies NEXTX/NEXTY/NEXTDX/NEXTDY/NEXTZOOMLEVEL
 ; into X/0/Y0/DX/DY/ZOOMLEVEL
 ;-----------------------------------------------------------------------------
-COPYNEXT:
+GOTOPLACE:
 .(
 	LDA NEXTX
 	STA X0
@@ -270,6 +287,154 @@ COPYNEXT:
 
 	LDA NEXTZOOMLEVEL
 	STA ZOOMLEVEL
+
+	RTS
+.)
+
+;-----------------------------------------------------------------------------
+; Wait for some time at the end of the mandelbrot display
+; (tuned for something like 4 seconds)
+; Can be interrupted by pressing a key
+; NZ if should abort
+;-----------------------------------------------------------------------------
+WAIT:
+.(
+	LDX #WAITIME*2				; Each double loop take around 1/2 second (0.72 seconds)
+LOOP1:
+	TXA
+	PHA
+	LDY #0
+LOOP2:
+	LDX #0
+LOOP3:
+	LDA KBDCR					; Exit on keypress
+	BMI DONE
+	DEX
+	BNE LOOP3
+	DEY
+	BNE LOOP2
+	PLA
+	TAX
+	DEX
+	BNE LOOP1
+	RTS
+
+DONE:
+	PLA
+	LDA KBD			; Clear key
+	CMP #' '
+	RTS
+.)
+
+;-----------------------------------------------------------------------------
+; Sets Z 1/A times
+;-----------------------------------------------------------------------------
+RNDCHOICE:
+.(
+	TAX				; X = FREQ
+	JSR RANDOM
+	TAY				; Y = RANDOM
+	TXA				; A = FREQ
+LOOP:
+	DEX
+	BNE SKIP		; Skip if not last
+	TAX				; Reset FREQ
+SKIP:
+	DEY
+	BNE LOOP
+	TXA				; If X will be 1 1/FREQ times
+	CMP #1
+DONE:
+	RTS
+.)
+
+;-----------------------------------------------------------------------------
+; Return a random number in A
+;-----------------------------------------------------------------------------
+RANDOM:
+.(
+    LDA SEED
+    ASL
+    BCC SKIP
+    EOR #$1d
+SKIP:
+	sta SEED
+	RTS
+.)
+
+;-----------------------------------------------------------------------------
+; Draw a single mandelbrot screen
+; Selects the next place to zoom in when displaying, according to ZOOMTRIGGER*
+;-----------------------------------------------------------------------------
+DRAWSET:
+.(
+	LDA #0
+	STA FREQ
+
+	LDA #24
+	STA SCRNY
+	MLOADAX(Y0)
+	MSTOREAX(Y)
+LOOP1:
+	LDA #40
+	STA SCRNX
+	MLOADAX(X0)
+	MSTOREAX(X)
+
+LOOP2:
+	JSR ITER
+
+		; Get character
+	JSR CHARFROMIT
+
+		; To avoid scrolling when image is complete, we skip the last char
+	TAX
+	LDA SCRNY
+	CMP #1
+	BNE CONTINUE
+	LDA SCRNX
+	CMP #1
+	BNE CONTINUE
+	RTS
+
+CONTINUE:
+	TXA
+	JSR ECHO
+
+		; Maybe this could be the new zoom ?
+	LDA IT
+	LDY ZOOMLEVEL
+	CMP ZOOMTRIGGERMIN,Y
+	BMI SKIP
+	CMP ZOOMTRIGGERMAX,Y
+	BPL SKIP
+
+	JSR SELECTNEXT
+
+SKIP:
+		; Move X to next position in set
+	LDA DX
+	CLC
+	ADC X
+	STA X
+	LDA DX+1
+	ADC X+1
+	STA X+1
+
+	DEC SCRNX
+	BNE LOOP2
+
+		; Move Y to next position in set
+	LDA DY
+	CLC
+	ADC Y
+	STA Y
+	LDA DY+1
+	ADC Y+1
+	STA Y+1
+
+	DEC SCRNY
+	BNE LOOP1
 
 	RTS
 .)
@@ -356,164 +521,6 @@ SKIP:
 .)
 
 ;-----------------------------------------------------------------------------
-; Wait for some time at the end of the mandelbrot display
-; (tuned for something like 4 seconds)
-; Can be interrupted by pressing a key
-;-----------------------------------------------------------------------------
-WAIT:
-.(
-	LDX #8
-LOOP1:
-	TXA
-	PHA
-	LDY #0
-LOOP2:
-	LDX #0
-LOOP3:
-	LDA KBDCR
-	BMI DONE
-	DEX
-	BNE LOOP3
-	DEY
-	BNE LOOP2
-	PLA
-	TAX
-	DEX
-	BNE LOOP1
-	RTS
-
-DONE:
-	PLA
-	LDA KBD			; Clear key
-	RTS
-.)
-
-
-;-----------------------------------------------------------------------------
-; Return a random number in A
-;-----------------------------------------------------------------------------
-RANDOM:
-.(
-    LDA SEED
-    ASL
-    BCC SKIP
-    EOR #$1d
-SKIP:
-	sta SEED
-	RTS
-.)
-
-;-----------------------------------------------------------------------------
-; Sets Z 1/A times
-;-----------------------------------------------------------------------------
-RNDCHOICE:
-.(
-	TAX				; X = FREQ
-	JSR RANDOM
-	TAY				; Y = RANDOM
-	TXA				; A = FREQ
-LOOP:
-	DEX
-	BNE SKIP		; Skip if not last
-	TAX				; Reset FREQ
-SKIP:
-	DEY
-	BNE LOOP
-	TXA				; If X will be 1 1/FREQ times
-	CMP #1
-DONE:
-	RTS
-.)
-
-;-----------------------------------------------------------------------------
-; Draw a single mandelbrot screen
-; Selects the next place to zoom in when displaying, according to ZOOMTRIGGER*
-;-----------------------------------------------------------------------------
-DRAWSET:
-.(
-	LDA #0
-	STA FREQ
-
-	LDA #24
-	STA SCRNY
-	MLOADAX(Y0)
-	MSTOREAX(Y)
-LOOP1:
-	LDA #40
-	STA SCRNX
-	MLOADAX(X0)
-	MSTOREAX(X)
-
-LOOP2:
-	JSR ITER
-
-		; Get character
-	JSR CHARFROMIT
-
-		; To avoid scrolling when image is complete, we skip the last char
-	TAX
-	LDA SCRNY
-	CMP #1
-	BNE CONTINUE
-	LDA SCRNX
-	CMP #1
-	BNE CONTINUE
-	RTS
-
-CONTINUE:
-	TXA
-	JSR ECHO
-
-		; Maybe this could be the new zoom ?
-	LDA IT
-	LDY ZOOMLEVEL
-	CMP ZOOMTRIGGERMIN,Y
-	BMI SKIP
-	CMP ZOOMTRIGGERMAX,Y
-	BPL SKIP
-
-	JSR SELECTNEXT
-
-SKIP:
-		; Move X to next position in set
-	LDA DX
-	CLC
-	ADC X
-	STA X
-	LDA DX+1
-	ADC X+1
-	STA X+1
-
-	DEC SCRNX
-	BNE LOOP2
-
-		; Move Y to next position in set
-	LDA DY
-	CLC
-	ADC Y
-	STA Y
-	LDA DY+1
-	ADC Y+1
-	STA Y+1
-
-	DEC SCRNY
-	BNE LOOP1
-
-	RTS
-.)
-
-; Increments PTR`
-INCPTR:
-.(
-	CLC
-	INC PTR
-	BNE DONE
-	INC PTR+1
-DONE:
-	RTS
-.)
-
-;-----------------------------------------------------------------------------
 ; Prints the string that is stored after the JSR instruction that sent us here
 ;-----------------------------------------------------------------------------
 PRINTINLINE:
@@ -535,6 +542,19 @@ PRINTDONE:
 	PHA
 	LDA PTR
 	PHA
+	RTS
+.)
+
+;-----------------------------------------------------------------------------
+; Increments PTR
+;-----------------------------------------------------------------------------
+INCPTR:
+.(
+	CLC
+	INC PTR
+	BNE DONE
+	INC PTR+1
+DONE:
 	RTS
 .)
 
@@ -734,6 +754,27 @@ NEG:
 .)
 
 ;-----------------------------------------------------------------------------
+; Input AX
+; Retuns SQUARE of AX, set carry if overflow
+;-----------------------------------------------------------------------------
+SQUARE:
+.(
+	JSR ISNUMBER		; Not a number or overflow ?
+	BCS DONE
+	JSR ABS				; Get absolute value
+	ORA #$10			; Set square table address bit (0x1000)
+	STA FACC+1
+	STX FACC
+	LDY #0
+	LDA (FACC),Y
+	TAX
+	INY
+	LDA (FACC),Y
+DONE:
+	RTS
+.)
+
+;-----------------------------------------------------------------------------
 ; Input AX, valid number
 ; Output abs(AX)
 ;-----------------------------------------------------------------------------
@@ -768,27 +809,6 @@ ISNUMBER:
 DONENAN:
 	PLA
 	SEC
-	RTS
-.)
-
-;-----------------------------------------------------------------------------
-; Input AX
-; Retuns SQUARE of AX, set carry if overflow
-;-----------------------------------------------------------------------------
-SQUARE:
-.(
-	JSR ISNUMBER		; Not a number or overflow ?
-	BCS DONE
-	JSR ABS				; Get absolute value
-	ORA #$10			; Set square table address bit (0x1000)
-	STA FACC+1
-	STX FACC
-	LDY #0
-	LDA (FACC),Y
-	TAX
-	INY
-	LDA (FACC),Y
-DONE:
 	RTS
 .)
 
@@ -891,29 +911,14 @@ CONTINUE:
 	JMP FILLNAN
 .)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ;-----------------------------------------------------------------------------
-;	Debug support
+;	Debug support, optionally compiled in
 ;-----------------------------------------------------------------------------
 
 #ifdef DEBUG
+
+TMP1 = $1A
+TMP2 = $1C
 
 TMP_DBG = $FD		; 3 Bytes needed
 
@@ -948,8 +953,7 @@ DBGNEXT:
 ;-----------------------------------------------------------------------------
 DBG_AX:
 .(
-	STA TMP_DBG
-	STX TMP_DBG+1
+	MSTOREAX(TMP_DBG)
 	STY TMP_DBG+2
 	PLA
 	STA PTR
@@ -968,13 +972,11 @@ PRINTDONE:
 	PHA
 	LDA PTR
 	PHA
-	LDA TMP_DBG
-	LDX TMP_DBG+1
+	MLOADAX(TMP_DBG)
 	JSR PRINT_AX
 	; LDA #$d
 	; JSR ECHO
-	LDA TMP_DBG
-	LDX TMP_DBG+1
+	MLOADAX(TMP_DBG)
 	LDY TMP_DBG+2
 	RTS
 .)

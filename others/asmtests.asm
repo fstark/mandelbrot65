@@ -1,5 +1,7 @@
 ; Parts of Mandelbrot65 that ewere used for tests but are not useful anymore
 
+MARKER = $FF
+
 ;-----------------------------------------------------------------------------
 ; Input AX
 ; If number is NAN or OVERFLOW, make it 00 01
