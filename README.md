@@ -8,7 +8,7 @@ This demo as been desgined for Aberco/SiliconInsider Apple1 ROM card.
 
 If you want to use the demo standalone, use either the binary file:
 
-[mandelbrot65.o65](mandelbrot65.o65) or the [Hex file](mandebrot65.hex).
+[mandelbrot65.o65](mandelbrot65.o65) or the [hex file](mandelbrot65.hex). You can copy/paste the hex file on an [Apple1 emulator](https://www.scullinsteel.com/apple1/).
 
 # How do I run it?
 
