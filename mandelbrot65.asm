@@ -1,9 +1,9 @@
 ;-----------------------------------------------------------------------------
 ;	MANDELBROT65 : A 3.8 FIXED POINT MATH MANDELBROT CALCULATOR FOR THE APPLE1
 ;-----------------------------------------------------------------------------
-
-;-----------------------------------------------------------------------------
-; INCLUDE DEBUGGING SUPPORT
+; FREDERIC STARK SEPTEMBER 2024
+; https://www.github.com/fstark/mandelbrot65
+; http://stark.fr/blog/mandelbrot65 (coming soon)
 ;-----------------------------------------------------------------------------
 
 #define noDEBUG		; Define DEBUG to include some debugging support
@@ -12,73 +12,76 @@
 ; Apple1 ROM & Hardware constants
 ;-----------------------------------------------------------------------------
 
-ECHO 	= $FFEF
-WOZMON 	= $FF00
-PRBYTE 	= $FFDC
-KBD 	= $D010
-KBDCR 	= $D011
+ECHO 	= $FFEF			; ECHO A CHARACTER
+KBD 	= $D010			; KEYBOARD
+KBDCR 	= $D011			; KEYBOARD CONTROL
 
 ;-----------------------------------------------------------------------------
 ; Zero page variables layout
 ;-----------------------------------------------------------------------------
 
-; TMP vs FACC???
 
+;-----------------------------------------------------------------------------
+; Coordinates of the current mandelbrot displayed,
+; frequency for choice of next one
+; iteration count for the current "pixel"
+; and a few of internal variables (seed, abort, nan mask)
+;-----------------------------------------------------------------------------
 
+;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+; 00 | X COORD | Y COORD | X DELTA | Y DELTA |ZOOM|FREQ|         |NAN |SEED|ABRT| IT |
+;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+X0 = $00				; Top-left position in the set
+Y0 = $02
+DX = $04				; Current delta
+DY = $06
+ZOOMLEVEL = $08			; Current zoom level (0-4)
+FREQ = $09				; Used to randomly choose the next coordinates during the computation of the current one
+NAN = $0C				; The bitmask for NAN (to use with BIT). Contains $01
+SEED = $0D				; The random seed
+ABORT = $0E				; If bit 7 is set, abort was requested by the user
+						; Use BIT ABORT + BMI to check
+IT = $0F				; Iteration counter
 
-
+;-----------------------------------------------------------------------------
 ;    Coordinates of the next mandelbrot to display (X,Y and X,Y deltas)
-;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-; 00 | NEXT X  | NEXT  Y | NX DELTA| NY DELTA|ZOOM|                                  |
-;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-NEXTX = $39		; Next position when auto zoom
-NEXTY = $3B
-NEXTDX = $3D	; Next delta when auto zoom
-NEXTDY = $3F
-NEXTZOOMLEVEL = $43
+;-----------------------------------------------------------------------------
 
-; Coordinates of the current mandelbrot displayed, frquency for choice of next one
-; and iteration count for the current "pixel"
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-; 10 | X COORD | Y COORD | X DELTA | Y DELTA |ZOOM|FREQ|                        | IT |
+; 10 | NEXT X  | NEXT  Y | NX DELTA| NY DELTA|ZOOM|                                  |
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-X0 = $0E
-Y0 = $10
-DX = $12
-DY = $14
-ZOOMLEVEL = $42	; 0, 1, 2, 3 or 4
-FREQ = $38			; Used to randomly choose the next coordinates during the computation of the current one
-; Iteration counter
-IT = $30		; Iteration counter
+NEXTX = $10				; Next position we will zoom in
+NEXTY = $12
+NEXTDX = $14			; Next delta we will use after zooming in
+NEXTDY = $16
+NEXTZOOMLEVEL = $18		; Next zoom level (0-4)
 
+;-----------------------------------------------------------------------------
 ; Current "pixel" beging computed, in mandelbrot and screen space
+;-----------------------------------------------------------------------------
+
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 ; 20 | X CURR  | Y CURR  | X SCRN  | Y SCRN  |   ZX    |   ZY    |  ZX^2   |  ZY^ 2  |
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-X = $16			; Current position in the set
-Y = $18
-SCRNX = $0C	        ; When iterating, the counter of lines and columns left to draw
-SCRNY = $0D
+X = $20					; Current position in the set
+Y = $22
+SCRNX = $24	        	; Counter of lines and columns left to draw
+SCRNY = $26
+ZX = $28				; X in current iteration
+ZY = $2A
+ZX2 = $2C				; X^2 in current iteration
+ZY2 = $2E
 
-; Variables for the current mandelbrot iterations. ZX2 and ZY2 hold the squares
-; for optimisation purposes
-
-ZX = $28		; X in current iteration
-ZY = $2A		; Y in current iteration
-ZX2 = $2C		; X^2 in current iteration
-ZY2 = $2E		; Y^2 in current iteration
-
+;-----------------------------------------------------------------------------
+; Various temporaries
+;-----------------------------------------------------------------------------
 
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-; 30 | 3 BYTES NUM  | 3 BYTES INC  | POINTER |NAN |SEED|ABRT|			             |
+; 30 | 3 BYTES NUM  | 3 BYTES INC  | POINTER |               			             |
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-NUM = $02  ; 3 bytes
-INCR = $05 ; 3 bytes
-PTR = $08
-NAN = $0B
-SEED = $37
-ABORT = $44			; If $FF, abort was requested by the user
-					; Use BIT ABORT + BMI to check
+NUM = $30  				; A 3 bytes number used to build the square table
+INCR = $33 				; 3 bytes increment used to build the square table
+PTR = $36				; A generic pointer
 
 
 
@@ -89,25 +92,15 @@ ABORT = $44			; If $FF, abort was requested by the user
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 ; 40 | DBG TMP1| DBG TMP2|    DBG TMP   |                                            |
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-TMP1 = $1A
-TMP2 = $1C
-TMP_DBG = $FD		; 3 Bytes needed
+TMP1 = $40
+TMP2 = $42
+TMP_DBG = $44		; 3 Bytes needed
 
 #endif
 
 ;-----------------------------------------------------------------------------
 ; Constants
 ;-----------------------------------------------------------------------------
-
-
-; Default Mandelbrot coordinates
-INITALX = $FBD0
-INITALY = $FDC0
-INITIALDX = $0026
-INITIALDY = $0030
-
-; Time to wait between two mandelbrot displays in "rought seconds"
-WAITIME = 4
 
 ; 16 bits number
 ; Format of numbers (16 bits, stored little endian -- reversed from this drawing)
@@ -131,10 +124,18 @@ WAITIME = 4
 ; so there is opportunity to either squeeze more numbers in a rewrite (3.9 fixed point)
 ; or using less memory for the table
 
-SIGNBIT = $80
-OVFBIT = $10
+; Default Mandelbrot coordinates
+INITALX = $FBD0				; LEFT = 11111011 11010000 = -2.093
+INITALY = $FDC0				; TOP  = 11111101 11000000 = -1.125
+INITIALDX = $0026			; DX   = 00000000 00100110 = 0.073
+INITIALDY = $0030			; DY   = 00000000 00110000 = 0.094
+
 NANBIT = $01
 
+; Time to wait between two mandelbrot displays in "rought seconds"
+WAITIME = 4
+
+; Location of the square table (cannot be changed)
 SQUARETABLE = $1000			; This table cannot be moved
 SQUARETABLE_END = $2000		; End of table
 
@@ -220,7 +221,8 @@ MAIN:
 .byte "        --== Mandelbrot 65 ==--  ", $d, $d
 .byte "A 6502 MANDELBROT & JULIA TIME WASTER", $d
 .byte "                        FOR YOUR APPLE 1", $d, $d
-.byte "                V1.0 BY FRED STARK, 2024", $d,$d
+.byte "                V1.0 BY FRED STARK, 2024"
+.byte "       http://stark.fr/blog/mandelbrot65",$d,$d
 .byte "        (PRESS ANY KEY TO START)", $d
 .byte 0
 
@@ -1135,8 +1137,7 @@ PRINT_AX:
 	BNE PRINT_NAN			; PRINT <NAN?>
 	PLA
 	PHA
-	AND #SIGNBIT			; TEST SIGN
-	BEQ POSITIVE			; PRINTS '+' AND NUMBER
+	BPL POSITIVE			; PRINTS '+' AND NUMBER
 	LDA #'-'				; PRINTS '-' AND -NUMBER
 	JSR ECHO
 	TXA

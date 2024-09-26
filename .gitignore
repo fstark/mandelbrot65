@@ -1,6 +1,4 @@
 .vscode/
-mandelbrot65.hex
 mandelbrot65.lst
-mandelbrot65.o65
 others/validate
 mandelbrot65.snp
