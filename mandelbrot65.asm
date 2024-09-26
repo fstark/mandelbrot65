@@ -25,25 +25,11 @@ KBDCR 	= $D011
 ; TMP vs FACC???
 
 
-;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-; 00 | TMP     | 3 BYTES NUM  | 3 BYTES INC  | POINTER |NAN |SEED|ABRT|			   |
-;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-FACC = $00			; Fixed accumulator, used to address the square table
-TMP = $0A
-NUM = $02  ; 3 bytes
-INCR = $05 ; 3 bytes
-PTR = $08
-NAN = $0B
-SEED = $37
-ABORT = $44			; If $FF, abort was requested by the user
-					; Use BIT ABORT + BMI to check
-
-
 
 
 ;    Coordinates of the next mandelbrot to display (X,Y and X,Y deltas)
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-; 10 | NEXT X  | NEXT  Y | NX DELTA| NY DELTA|ZOOM|                                  |
+; 00 | NEXT X  | NEXT  Y | NX DELTA| NY DELTA|ZOOM|                                  |
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 NEXTX = $39		; Next position when auto zoom
 NEXTY = $3B
@@ -54,7 +40,7 @@ NEXTZOOMLEVEL = $43
 ; Coordinates of the current mandelbrot displayed, frquency for choice of next one
 ; and iteration count for the current "pixel"
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-; 20 | X COORD | Y COORD | X DELTA | Y DELTA |ZOOM|FREQ|                        | IT |
+; 10 | X COORD | Y COORD | X DELTA | Y DELTA |ZOOM|FREQ|                        | IT |
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 X0 = $0E
 Y0 = $10
@@ -67,7 +53,7 @@ IT = $30		; Iteration counter
 
 ; Current "pixel" beging computed, in mandelbrot and screen space
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-; 30 | X CURR  | Y CURR  | X SCRN  | Y SCRN  |   ZX    |   ZY    |  ZX^2   |  ZY^ 2  |
+; 20 | X CURR  | Y CURR  | X SCRN  | Y SCRN  |   ZX    |   ZY    |  ZX^2   |  ZY^ 2  |
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 X = $16			; Current position in the set
 Y = $18
@@ -81,6 +67,20 @@ ZX = $28		; X in current iteration
 ZY = $2A		; Y in current iteration
 ZX2 = $2C		; X^2 in current iteration
 ZY2 = $2E		; Y^2 in current iteration
+
+
+;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+; 30 | 3 BYTES NUM  | 3 BYTES INC  | POINTER |NAN |SEED|ABRT|			             |
+;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+NUM = $02  ; 3 bytes
+INCR = $05 ; 3 bytes
+PTR = $08
+NAN = $0B
+SEED = $37
+ABORT = $44			; If $FF, abort was requested by the user
+					; Use BIT ABORT + BMI to check
+
+
 
 
 #ifdef DEBUG
@@ -220,7 +220,7 @@ MAIN:
 .byte "        --== Mandelbrot 65 ==--  ", $d, $d
 .byte "A 6502 MANDELBROT & JULIA TIME WASTER", $d
 .byte "                        FOR YOUR APPLE 1", $d, $d
-.byte "                     BY FRED STARK, 2024", $d
+.byte "                V1.0 BY FRED STARK, 2024", $d,$d
 .byte "        (PRESS ANY KEY TO START)", $d
 .byte 0
 
@@ -255,18 +255,27 @@ MANDELAUTO:
 	JSR INITIALPLACE	; Starts a mandelbrot
 
 LOOP:
-	JSR GOTOPLACE		; Go to next place
-	JSR INITIALPLACE	; If we don't find a new spot
-						; We go back to Mandelbrot
+		; Load next place to go
+	JSR GOTOPLACE
 
-	LDA #$d				; A couple of lines between drawings
+		; Make future next place standard mandelbrot
+		; as a default
+	JSR INITIALPLACE
+
+		; A couple of lines between drawings
+	LDA #$d
 	JSR ECHO
 	JSR ECHO
 
-	JSR DRAWSET			; Draw the mandelbrot set & pick a new spot
+		; Clear ABORT flag
+	LDA #0
+	STA ABORT
+		; Draw the mandelbrot set & pick a new spot
+	JSR DRAWSET
 
-	JSR WAIT			; 4 seconds or a keypress
-	BNE MANDELAUTO		; If non-space pressed, restart full mandelbrot
+		; Wait for a while (or key press)
+	JSR WAIT			
+	; BNE MANDELAUTO		; If non-space pressed, restart full mandelbrot
 
 	JMP LOOP
 .)
@@ -391,6 +400,11 @@ GOTOPLACE:
 ;-----------------------------------------------------------------------------
 WAIT:
 .(
+		; If ABORT was requested, we exit
+	BIT ABORT
+	BMI DONE
+
+		; Wait for around WAITIME seconds
 	LDX #WAITIME*2				; Each double loop take around 1/2 second (0.72 seconds)
 LOOP1:
 	TXA
@@ -399,19 +413,21 @@ LOOP1:
 LOOP2:
 	LDX #0
 LOOP3:
-	LDA KBDCR					; Exit on keypress
-	BMI DONE
 	DEX
 	BNE LOOP3
+		; Exit if key pressed
+	LDA KBDCR
+	BMI KEY
 	DEY
 	BNE LOOP2
 	PLA
 	TAX
 	DEX
 	BNE LOOP1
+DONE:
 	RTS
 
-DONE:
+KEY:
 	LDA #$80
 	STA ABORT
 	PLA
@@ -429,12 +445,18 @@ DONE:
 KEYPRESSED:
 .(
 	LDA KBDCR
-	BPL DONE					; No key
+	BPL NOKEY
+
+		; Key pressed
+	LDA #$80
+	STA ABORT
+
+		; Read key
 	LDA KBD
 	CMP #' '					; Z if space
 	SEC
 	RTS
-DONE:
+NOKEY:
 	CLC							; No key, no Carry
 	RTS
 .)
@@ -471,10 +493,15 @@ LOOP2:
 	BNE CONTINUE
 	LDA SCRNX
 	CMP #1
-	BNE CONTINUE
-	RTS
+	BEQ DONE
 
 CONTINUE:
+		; Handle keypress
+	JSR KEYPRESSED
+	BIT ABORT
+	BMI DONE
+
+		; Display character
 	TXA
 	JSR ECHO
 
@@ -513,6 +540,7 @@ SKIP:
 	DEC SCRNY
 	BNE LOOP1
 
+DONE:
 	RTS
 .)
 
@@ -863,13 +891,13 @@ SQUARE:
 	BCS DONE
 	JSR ABS				; Absolute value
 	ORA #$10			; Set square table address bit (0x1000)
-	STX FACC
-	STA FACC+1
+	STX PTR
+	STA PTR+1
 	LDY #0
-	LDA (FACC),Y
+	LDA (PTR),Y
 	TAX
 	INY
-	LDA (FACC),Y
+	LDA (PTR),Y
 DONE:
 	RTS
 .)
