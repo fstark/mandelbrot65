@@ -19,49 +19,81 @@ KBD 	= $D010
 KBDCR 	= $D011
 
 ;-----------------------------------------------------------------------------
-; Zero page variables
+; Zero page variables layout
 ;-----------------------------------------------------------------------------
 
-FACC = $00			; Fixed accumulator, used to address the square table
+; TMP vs FACC???
 
+
+;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+; 00 | TMP     | 3 BYTES NUM  | 3 BYTES INC  | POINTER |NAN |SEED|ABRT|			   |
+;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+FACC = $00			; Fixed accumulator, used to address the square table
+TMP = $0A
 NUM = $02  ; 3 bytes
 INCR = $05 ; 3 bytes
-
 PTR = $08
-TMP = $0A
 NAN = $0B
+SEED = $37
+ABORT = $44			; If $FF, abort was requested by the user
+					; Use BIT ABORT + BMI to check
 
+
+
+
+;    Coordinates of the next mandelbrot to display (X,Y and X,Y deltas)
+;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+; 10 | NEXT X  | NEXT  Y | NX DELTA| NY DELTA|ZOOM|                                  |
+;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+NEXTX = $39		; Next position when auto zoom
+NEXTY = $3B
+NEXTDX = $3D	; Next delta when auto zoom
+NEXTDY = $3F
+NEXTZOOMLEVEL = $43
+
+; Coordinates of the current mandelbrot displayed, frquency for choice of next one
+; and iteration count for the current "pixel"
+;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+; 20 | X COORD | Y COORD | X DELTA | Y DELTA |ZOOM|FREQ|                        | IT |
+;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+X0 = $0E
+Y0 = $10
+DX = $12
+DY = $14
+ZOOMLEVEL = $42	; 0, 1, 2, 3 or 4
+FREQ = $38			; Used to randomly choose the next coordinates during the computation of the current one
+; Iteration counter
+IT = $30		; Iteration counter
+
+; Current "pixel" beging computed, in mandelbrot and screen space
+;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+; 30 | X CURR  | Y CURR  | X SCRN  | Y SCRN  |   ZX    |   ZY    |  ZX^2   |  ZY^ 2  |
+;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+X = $16			; Current position in the set
+Y = $18
 SCRNX = $0C	        ; When iterating, the counter of lines and columns left to draw
 SCRNY = $0D
+
+; Variables for the current mandelbrot iterations. ZX2 and ZY2 hold the squares
+; for optimisation purposes
 
 ZX = $28		; X in current iteration
 ZY = $2A		; Y in current iteration
 ZX2 = $2C		; X^2 in current iteration
 ZY2 = $2E		; Y^2 in current iteration
-IT = $30		; Iteration counter
 
 
-X0 = $0E
-Y0 = $10
-DX = $12
-DY = $14
+#ifdef DEBUG
 
-X = $16			; Current position in the set
-Y = $18
+; Temporary variables used by debug code
+;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+; 40 | DBG TMP1| DBG TMP2|    DBG TMP   |                                            |
+;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+TMP1 = $1A
+TMP2 = $1C
+TMP_DBG = $FD		; 3 Bytes needed
 
-PLACEPTR = $35
-
-SEED = $37
-FREQ = $38
-
-NEXTX = $39		; Next position when auto zoom
-NEXTY = $3B
-NEXTDX = $3D	; Next delta when auto zoom
-NEXTDY = $3F
-
-
-ZOOMLEVEL = $42	; 0, 1, 2, 3 or 4
-NEXTZOOMLEVEL = $43
+#endif
 
 ;-----------------------------------------------------------------------------
 ; Constants
@@ -179,6 +211,9 @@ MAIN:
 	LDA #NANBIT
 	STA NAN   ; Bit mask for NaN
 
+	LDA #0
+	STA ABORT
+
 		; Display intro
 	JSR PRINTINLINE
 .byte $d, $d
@@ -189,6 +224,9 @@ MAIN:
 .byte "        (PRESS ANY KEY TO START)", $d
 .byte 0
 
+	BIT ABORT
+	BMI SKIP
+
 		; Wait for key and init SEED
 	LDA KBD
 LOOP:
@@ -196,6 +234,11 @@ LOOP:
 	LDA KBDCR
 	BPL LOOP
 	LDA KBD
+
+SKIP:
+		; Clear any potential previous abort
+	LDA #0
+	STA ABORT
 
 		; Initialize Square table
 	JSR FILLSQUARES
@@ -229,7 +272,54 @@ LOOP:
 .)
 
 ;-----------------------------------------------------------------------------
-; Fills ZP variables with the initial values
+; Prints the string that is stored after the JSR instruction that sent us here
+; Input:
+;   Data stored in the code after the jsr instruction
+;-----------------------------------------------------------------------------
+PRINTINLINE:
+.(
+	PLA
+	STA PTR
+	PLA
+	STA PTR+1
+	JSR INCPTR
+	LDY #0
+PRINTLOOP:
+	LDA (PTR),Y
+	BEQ PRINTDONE
+
+		; We skip actual slow printing if abort was requested
+	BIT ABORT
+	BMI SKIP
+	JSR ECHO
+
+SKIP:
+		; See if a key was pressed
+	JSR KEYPRESSED
+	BCC SKIP2
+	LDA #$FF
+	STA ABORT
+
+		; Increment random seed with number of chars really displayed
+	INC SEED
+
+		; Incremement and next
+SKIP2:
+	JSR INCPTR
+	JMP PRINTLOOP
+
+PRINTDONE:
+	LDA PTR+1
+	PHA
+	LDA PTR
+	PHA
+	RTS
+.)
+
+;-----------------------------------------------------------------------------
+; Fills ZP "next" variables with the initial values
+; Output:
+;   ZP:NEXTX, ZP:NEXTY, ZP:NEXTDX, ZP:NEXTDY, ZP:NEXTZOOMLEVEL
 ;-----------------------------------------------------------------------------
 INITIALPLACE:
 .(
@@ -296,6 +386,8 @@ GOTOPLACE:
 ; (tuned for something like 4 seconds)
 ; Can be interrupted by pressing a key
 ; NZ if should abort
+; Output:
+;   ZP:ABORT bit #7 sets if abort was requested
 ;-----------------------------------------------------------------------------
 WAIT:
 .(
@@ -320,6 +412,8 @@ LOOP3:
 	RTS
 
 DONE:
+	LDA #$80
+	STA ABORT
 	PLA
 	LDA KBD			; Clear key
 	CMP #' '
@@ -327,38 +421,21 @@ DONE:
 .)
 
 ;-----------------------------------------------------------------------------
-; Sets Z 1/A times
+; Has a key been pressed ?
+; Output:
+;   C if key
+;   Z if key is ' '
 ;-----------------------------------------------------------------------------
-RNDCHOICE:
+KEYPRESSED:
 .(
-	TAX				; X = FREQ
-	JSR RANDOM
-	TAY				; Y = RANDOM
-	TXA				; A = FREQ
-LOOP:
-	DEX
-	BNE SKIP		; Skip if not last
-	TAX				; Reset FREQ
-SKIP:
-	DEY
-	BNE LOOP
-	TXA				; If X will be 1 1/FREQ times
-	CMP #1
-DONE:
+	LDA KBDCR
+	BPL DONE					; No key
+	LDA KBD
+	CMP #' '					; Z if space
+	SEC
 	RTS
-.)
-
-;-----------------------------------------------------------------------------
-; Return a random number in A
-;-----------------------------------------------------------------------------
-RANDOM:
-.(
-    LDA SEED
-    ASL
-    BCC SKIP
-    EOR #$1d
-SKIP:
-	sta SEED
+DONE:
+	CLC							; No key, no Carry
 	RTS
 .)
 
@@ -447,12 +524,19 @@ SKIP:
 ; without keeping all candidates in memory
 ; Only works for zooms where DX<128 (ie: all of them) because the /2 division
 ; is only made on the LSB
+; Input:
+;   ZP:FREQ number of previous choices (probability that this one is the right one)
+;   ZP:X, ZP:Y, ZP:DX, ZP:DY, ZP:ZOOMLEVEL current position
+;   ZP:NEXTX, ZP:NEXTY, ZP:NEXTDX, ZP:NEXTDY, ZP:NEXTZOOMLEVEL next position
+; Output:
+;   ZP:FREQ incremented
+;   ZP:NEXTX, ZP:NEXTY, ZP:NEXTDX, ZP:NEXTDY, ZP:NEXTZOOMLEVEL next position
 ;-----------------------------------------------------------------------------
 SELECTNEXT:
 .(
 	INC FREQ
 	LDA FREQ
-	JSR RNDCHOICE
+	JSR RNDCHOICE	; Sets Z 1/FREQ times
 	BNE SKIP
 
 	LDA DX
@@ -521,32 +605,56 @@ SKIP:
 .)
 
 ;-----------------------------------------------------------------------------
-; Prints the string that is stored after the JSR instruction that sent us here
+; Sets Z 1/A times
+; Input:
+;   A: FREQ
+; Output:
+;   Z: 1/FREQ times
 ;-----------------------------------------------------------------------------
-PRINTINLINE:
+RNDCHOICE:
 .(
-	PLA
-	STA PTR
-	PLA
-	STA PTR+1
-	JSR INCPTR
-	LDY #0
-PRINTLOOP:
-	LDA (PTR),Y
-	BEQ PRINTDONE
-	JSR ECHO
-	JSR INCPTR
-	JMP PRINTLOOP
-PRINTDONE:
-	LDA PTR+1
-	PHA
-	LDA PTR
-	PHA
+	TAX				; X = FREQ
+	JSR RANDOM
+	TAY				; Y = RANDOM
+	TXA				; A = FREQ
+LOOP:
+	DEX
+	BNE SKIP		; Skip if not last
+	TAX				; Reset FREQ
+SKIP:
+	DEY
+	BNE LOOP
+	TXA				; If X will be 1 1/FREQ times
+	CMP #1
+DONE:
+	RTS
+.)
+
+;-----------------------------------------------------------------------------
+; Return a random number in A
+; Input:
+;   ZP:SEED seend
+; Output:
+;   A random number
+;   SEED updated
+;-----------------------------------------------------------------------------
+RANDOM:
+.(
+    LDA SEED
+    ASL
+    BCC SKIP
+    EOR #$1d
+SKIP:
+	sta SEED
 	RTS
 .)
 
 ;-----------------------------------------------------------------------------
 ; Increments PTR
+; Input:
+;  ZP:PTR, ZP:PTR+1
+; Output:
+;  ZP:PTR, ZP:PTR+1 is incremented
 ;-----------------------------------------------------------------------------
 INCPTR:
 .(
@@ -559,9 +667,11 @@ DONE:
 .)
 
 ;-----------------------------------------------------------------------------
-; Compute one mandelbrot set of iterations
-; ZP:X and ZP:Y contains the current position
-; ZP:IT iteration counter
+; Compute one set of mandelbrot iterations
+; Input:
+;   ZP:X, ZP:Y contains the current position
+; Output:
+;   ZP:IT iteration counter
 ;-----------------------------------------------------------------------------
 ITER:
 .(
@@ -604,9 +714,12 @@ DONE:
 .)
 
 ;-----------------------------------------------------------------------------
-; Compute one madelbrot iteration
-; ZP:ZX, ZP:ZY, ZP:ZX2, ZP:ZY2, ZP:IT
-; C if overflow or stop
+; Compute one mandelbrot iteration
+; Inputs:
+;   ZP:ZX, ZP:ZY, ZP:ZX2, ZP:ZY2
+; Outputs:
+;   ZP:ZX, ZP:ZY, ZP:ZX2, ZP:ZY2
+;   C if overflow or stop
 ;-----------------------------------------------------------------------------
 MANDEL1:
 .(
@@ -719,52 +832,39 @@ DONE:
 
 ;-----------------------------------------------------------------------------
 ; Returns the correct char for current iteration
-; Intput: ZP:IT constains the iteration number
-;         ZP:ZOOMLEVEL contains the current zoom level
-; Output: A contains the character to be displayed
+; Input:
+;   ZP:IT the iteration number
+;   ZP:ZOOMLEVEL the current zoom level
+; Output:
+;   A: the character to be displayed
 ;-----------------------------------------------------------------------------
 CHARFROMIT:
 .(
 	LDA IT
 	LDY ZOOMLEVEL
 	CLC
-	ADC PALETTEDELTA,Y	; A = IT + PALETTEDELTA[ZOOMLEVEL]
+	ADC PALETTEDELTA,Y	; A = PALETTEDELTA[ZOOMLEVEL] + IT
 	TAY
-	LDA PALETTE,Y		; Correct palette entry
+	LDA PALETTE,Y		; PALETTE[A]
 	RTS
 .)
 
 
 ;-----------------------------------------------------------------------------
-; Input AX, valid number
-; Output -AX
-;-----------------------------------------------------------------------------
-NEG:
-.(
-	PHA
-	TXA
-	EOR #$FF				; 2 COMPLEMENT OF (A,X)
-	CLC
-	ADC #1
-	TAX
-	PLA
-	EOR #$FF
-	ADC #0
-	RTS
-.)
-
-;-----------------------------------------------------------------------------
-; Input AX
-; Retuns SQUARE of AX, set carry if overflow
+; Input:
+;   A,X: number
+; Output
+;   A,X: AX^2
+;   Carry if overflow
 ;-----------------------------------------------------------------------------
 SQUARE:
 .(
 	JSR ISNUMBER		; Not a number or overflow ?
 	BCS DONE
-	JSR ABS				; Get absolute value
+	JSR ABS				; Absolute value
 	ORA #$10			; Set square table address bit (0x1000)
-	STA FACC+1
 	STX FACC
+	STA FACC+1
 	LDY #0
 	LDA (FACC),Y
 	TAX
@@ -775,8 +875,10 @@ DONE:
 .)
 
 ;-----------------------------------------------------------------------------
-; Input AX, valid number
-; Output abs(AX)
+; Input:
+;   A,X: valid number
+; Output
+;   A,X: abs(AX)
 ;-----------------------------------------------------------------------------
 ABS:
 .(
@@ -787,14 +889,37 @@ DONE:
 .)
 
 ;-----------------------------------------------------------------------------
-; Input AX
-; If number is NAN or OVERFLOW, set carry
+; Input:
+;   A,X: valid number
+; Output
+;   A,X: -AX
+;-----------------------------------------------------------------------------
+NEG:
+.(
+	PHA
+	TXA
+	EOR #$FF				; Complement of X
+	CLC
+	ADC #1					; +1
+	TAX
+	PLA
+	EOR #$FF				; Complement of A
+	ADC #0
+	RTS
+.)
+
+;-----------------------------------------------------------------------------
+; Check if number is "correct"
+; Input:
+;   A,X
+; Output:
+;   C if NAN or OVERFLOW
 ;-----------------------------------------------------------------------------
 ISNUMBER:
 .(
 	PHA
 	TXA
-	BIT NAN
+	BIT NAN			; Test the NAN BITS (BIT #0)
 	BNE DONENAN		; Skip if NAN
 	PLA
 	PHA
@@ -812,18 +937,11 @@ DONENAN:
 	RTS
 .)
 
-
-
-
-
-
-
 ;-----------------------------------------------------------------------------
 ; Some macros to deal with the filling of the square table
 ;-----------------------------------------------------------------------------
 
-
-	; Zeroes a **T**hree byt varaible
+	; Zeroes a **T**hree bytes variable
 #define MZEROT(ADRS) LDA #0:STA ADRS:STA ADRS+1:STA ADRS+2
 
 	; Increments
@@ -832,7 +950,6 @@ DONENAN:
 
 	; Additions
 #define MADDT(DEST,SRC) LDA DEST:CLC:ADC SRC:STA DEST:LDA DEST+1:ADC SRC+1:STA DEST+1:LDA DEST+2:ADC SRC+2:STA DEST+2
-
 
 ;-----------------------------------------------------------------------------
 ; Fill square table with squares of numbers
@@ -916,11 +1033,6 @@ CONTINUE:
 ;-----------------------------------------------------------------------------
 
 #ifdef DEBUG
-
-TMP1 = $1A
-TMP2 = $1C
-
-TMP_DBG = $FD		; 3 Bytes needed
 
 DBGNEXT:
 .(
