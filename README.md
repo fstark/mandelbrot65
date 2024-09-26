@@ -8,9 +8,9 @@ The title says it all. This is the fastest Mandelbrot calculator for the Apple1.
 
 This demo as been designed for Aberco/SiliconInsider yet-to-be-released Apple1 ROM card.
 
-If you want to use the demo standalone, use either the binary file:
+If you want to use the demo standalone, use either the binary file [mandelbrot65.o65](mandelbrot65.o65) or the [hex file](mandelbrot65.hex).
 
-[mandelbrot65.o65](mandelbrot65.o65) or the [hex file](mandelbrot65.hex). You can copy/paste the hex file on an [Apple1 emulator](https://www.scullinsteel.com/apple1/).
+You can also copy/paste the hex file on an [Apple1 emulator](https://www.scullinsteel.com/apple1/) (Reset key+Load button+copy/paste hex (with a CR at the end)+wait text stops scrolling+``280R``)
 
 # How do I run it?
 
