@@ -1,6 +1,8 @@
 # An 6502 assembly Mandelbrot drawing for the Apple1
 
-The title says it all. This is the fastest Mandelbrot calculator for the Apple1. At minimum zoom, it computes the Mandelbrot set as fast as the Apple1 can display it.
+The title says it all. This is the fastest Mandelbrot calculator for the Apple1. At minimum zoom, it computes the Mandelbrot set as fast as the Apple1 can display it (16.7 seconds per image)
+
+![Mandelbrot 65](images/Mandelbrot1.jpg)
 
 # How do I get it?
 
@@ -12,7 +14,9 @@ If you want to use the demo standalone, use either the binary file:
 
 # How do I run it?
 
-The demo is made to be loaded at addrss 0x0280 and run with a ``280R`` (or launched from the menu of the Apple1 1 ROM card).
+The demo is made to be loaded at address 0x0280 and run with a ``280R`` (or launched from the menu of the Apple1 1 ROM card).
+
+You will need 8K of RAM between 0000-1FFF to run it.
 
 The demo will wait for a key press (to initialize its internal random number generator) then draw a Mandelbrot set and perform a series of 4 level of zooms.
 
