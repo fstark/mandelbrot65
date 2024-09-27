@@ -30,7 +30,7 @@ KBDCR 	= $D011			; KEYBOARD CONTROL
 ;-----------------------------------------------------------------------------
 
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-; 00 | X COORD | Y COORD | X DELTA | Y DELTA |ZOOM|FREQ|         |NAN |SEED|ABRT| IT |
+; 00 | X COORD | Y COORD | X DELTA | Y DELTA |ZOOM|FREQ|         |    |SEED|ABRT| IT |
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 X0 = $00				; Top-left position in the set
 Y0 = $02
@@ -38,7 +38,6 @@ DX = $04				; Current delta
 DY = $06
 ZOOMLEVEL = $08			; Current zoom level (0-4)
 FREQ = $09				; Used to randomly choose the next coordinates during the computation of the current one
-NAN = $0C				; The bitmask for NAN (to use with BIT). Contains $01
 SEED = $0D				; The random seed
 ABORT = $0E				; If bit 7 is set, abort was requested by the user
 						; Use BIT ABORT + BMI to check
@@ -131,8 +130,6 @@ INITALY = $FDC0				; TOP  = 11111101 11000000 = -1.125
 INITIALDX = $0026			; DX   = 00000000 00100110 = 0.073
 INITIALDY = $0030			; DY   = 00000000 00110000 = 0.094
 
-NANBIT = $01
-
 ; Time to wait between two mandelbrot displays in "rought seconds"
 WAITIME = 4
 
@@ -217,9 +214,6 @@ ZOOMTRIGGERMAX:
 MAIN:
 .(
 		; Initialize ZP constants
-	LDA #NANBIT
-	STA NAN   ; Bit mask for NaN
-
 	LDA #0
 	STA ABORT
 
@@ -936,11 +930,9 @@ CHARFROMIT:
 ;-----------------------------------------------------------------------------
 SQUARE:
 .(
-	; JSR ISNUMBER		; Not a number or overflow ?
-	; BCS DONE
 	JSR ABS				; Absolute value
 	CMP #$08
-	BPL DONENAN
+	BPL DONENAN			; Larger than 4, we overflow the table (faster than ANDing with F0)
 	ORA #$10			; Set square table address bit (0x1000)
 	STX PTR
 	STA PTR+1
