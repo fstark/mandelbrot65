@@ -6,6 +6,7 @@
 ; http://stark.fr/blog/mandelbrot65 (coming soon)
 ;-----------------------------------------------------------------------------
 
+#define noNONRANDOM	; Define NONRANDOM to have a repeatable sequence
 #define noDEBUG		; Define DEBUG to include some debugging support
 
 ;-----------------------------------------------------------------------------
@@ -168,11 +169,18 @@ SQUARETABLE_END = $2000		; End of table
 ; One palette for each zoom level
 ;-----------------------------------------------------------------------------
 PALETTE:
-	.byte " .,'~=+:;[/<*?&O0X# XXXXXXXXXXXXXXXXXXXX"
-	.byte " ..,'~==+:;[[/<*??&OO0X# XXXXXXXXXXXXXXX"
-	.byte " ..,,''~==+::;[[/<<**??&OO0X# XXXXXXXXXX"
-	.byte " ..,,''~~==++::;[[/<<**??&&OO00XX# XXXXX"
-	.byte " ...,,'''~~==++::;;[[//<<***??&&OO00XX# "
+	.byte "..,'~=+:;[/<*?&O0X# XXXXXXXXXXXXXXXXXXXX"
+	.byte "..,'~==+:;;[[/<*??&OO0X# XXXXXXXXXXXXXXX"
+	.byte "..,''~==++::;;[[/<<**??&OO0X# XXXXXXXXXX"
+	.byte "..,''~~==+++::;;[[/<<**??&&OO00XX# XXXXX"
+	.byte "..,''~~==+++:::;;;[[[//<<***??&&OO00XX# "
+
+	; Useful to debug
+	; .byte "01234567890abcdefghijklmnopqrstuvwxyz!@#"
+	; .byte "01234567890abcdefghijklmnopqrstuvwxyz!@#"
+	; .byte "01234567890abcdefghijklmnopqrstuvwxyz!@#"
+	; .byte "01234567890abcdefghijklmnopqrstuvwxyz!@#"
+	; .byte "01234567890abcdefghijklmnopqrstuvwxyz!@#"
 
 ;-----------------------------------------------------------------------------
 ; The offset of each palette
@@ -198,7 +206,7 @@ ZOOMTRIGGERMIN:
 ; as next position
 ;-----------------------------------------------------------------------------
 ZOOMTRIGGERMAX:
-	.byte 19, 19, 20, 21, 22
+	.byte 20, 20, 21, 22, 23
 
 
 
@@ -238,6 +246,13 @@ LOOP:
 	LDA KBD
 
 SKIP:
+
+#ifdef NONRANDOM
+		; If you want repeatability
+	LDA #$1
+	STA SEED
+#endif
+
 		; Clear any potential previous abort
 	LDA #0
 	STA ABORT
@@ -483,7 +498,23 @@ LOOP1:
 	MSTOREAX(X)
 
 LOOP2:
+#ifdef DEBUG
+	MLOADAX(X)
+	JSR DBG_AX
+	.byte "X:", 0
+	MLOADAX(Y)
+	JSR DBG_AX
+	.byte " Y:", 0
+	LDA #' '
+	JSR ECHO
+#endif
+
 	JSR ITER
+
+#ifdef DEBUG
+	LDA #' '
+	JSR ECHO
+#endif
 
 		; Get character
 	JSR CHARFROMIT
@@ -728,6 +759,20 @@ ITER:
 LOOP:
 		;	Compute one mandelbrot iteration
 	JSR MANDEL1
+
+#ifdef DEBUG
+	PHP
+	MLOADAX(ZX)
+	JSR DBG_AX
+	.byte "ZX:", 0
+	MLOADAX(ZY)
+	JSR DBG_AX
+	.byte " ZY:", 0
+	LDA #' '
+	JSR ECHO
+	PLP
+#endif
+
 	BCS DONE
 
 		; Increment iteration
@@ -774,6 +819,7 @@ MANDEL1:
 
 	; (-zy+zx)^2
 	JSR SQUARE
+	BCS DIVERGE
 
 	; -(-zy+zx)^2
 	JSR NEG
@@ -840,23 +886,24 @@ MANDEL1:
 	; zx = -zy2 + zx2 + x
 	MSTOREAX(ZX)
 
-	; If not a number, done
-	JSR ISNUMBER
-	BCS DONE
-
 	; zx2 = zx^2
 	MLOADAX(ZX)
 	JSR SQUARE
-	BCS DONE
+	BCS DIVERGE
 	MSTOREAX(ZX2)
 
 	; zy2 = zy^2
 	MLOADAX(ZY)
 	JSR SQUARE
-	BCS DONE
+	BCS DIVERGE
 	MSTOREAX(ZY2)
 
 DONE:
+	CLC
+	RTS
+
+DIVERGE:
+	SEC
 	RTS
 .)
 
@@ -889,19 +936,27 @@ CHARFROMIT:
 ;-----------------------------------------------------------------------------
 SQUARE:
 .(
-	JSR ISNUMBER		; Not a number or overflow ?
-	BCS DONE
+	; JSR ISNUMBER		; Not a number or overflow ?
+	; BCS DONE
 	JSR ABS				; Absolute value
+	CMP #$08
+	BPL DONENAN
 	ORA #$10			; Set square table address bit (0x1000)
 	STX PTR
 	STA PTR+1
 	LDY #0
 	LDA (PTR),Y
+	CMP #1
+	BEQ DONENAN
 	TAX
 	INY
 	LDA (PTR),Y
 DONE:
+	CLC
 	RTS
+DONENAN:
+	SEC
+	RTS	
 .)
 
 ;-----------------------------------------------------------------------------
@@ -935,35 +990,6 @@ NEG:
 	PLA
 	EOR #$FF				; Complement of A
 	ADC #0
-	RTS
-.)
-
-;-----------------------------------------------------------------------------
-; Check if number is "correct"
-; Input:
-;   A,X
-; Output:
-;   C if NAN or OVERFLOW
-;-----------------------------------------------------------------------------
-ISNUMBER:
-.(
-	PHA
-	TXA
-	BIT NAN			; Test the NAN BITS (BIT #0)
-	BNE DONENAN		; Skip if NAN
-	PLA
-	PHA
-	CLC
-	AND #$90		; Isolate sign bit and overflow bit
-	ADC #$70		; Propagate overflow to sign
-	AND #$80		; If signed is zero then no overflow
-	BNE DONENAN
-	PLA
-	CLC
-	RTS
-DONENAN:
-	PLA
-	SEC
 	RTS
 .)
 

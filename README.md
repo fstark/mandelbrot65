@@ -1,6 +1,6 @@
 # An 6502 assembly Mandelbrot drawing for the Apple1
 
-The title says it all. This is the fastest Mandelbrot calculator for the Apple1. At minimum zoom, it computes the Mandelbrot set as fast as the Apple1 can display it (16.7 seconds per image)
+The title says it all. This is the fastest Mandelbrot calculator for the Apple1. At minimum zoom, it computes the Mandelbrot 3 times faster than the Apple1 can display it.
 
 ![Mandelbrot 65](images/Mandelbrot1.jpg)
 
@@ -24,7 +24,7 @@ Press a key to skip messages or mandelbrot displays.
 
 # How do I build it?
 
-Use the xa assembler and the top level Makefile.
+Use the ``xa`` assembler and the top level Makefile.
 
 ``make`` will make the binary and the hex file.
 ``make mandelbrot.o65`` will make the binary only.
