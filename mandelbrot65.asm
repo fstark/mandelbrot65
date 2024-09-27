@@ -109,7 +109,7 @@ TMP_DBG = $44		; 3 Bytes needed
 ; |i|i|i|i|i|i|i|f| |f|f|f|f|f|f|f|N|
 ; +-+-+-+-+-+-+-+-+ +-+-+-+-+-+-+-+-+
 ;  S     V
-; iiiiiii = integer part (7 bits, 3 sgnificant + sign, two complement)
+; iiii = integer part (7 bits, 3 sgnificant + sign, two complement)
 ; ffffffff = fractional part (8 bits)
 ; N is Nan:
 ; 	0 for having even addresses in the square table
