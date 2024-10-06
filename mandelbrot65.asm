@@ -6,6 +6,12 @@
 ; http://stark.fr/blog/mandelbrot65 (coming soon)
 ;-----------------------------------------------------------------------------
 
+;-----------------------------------------------------------------------------
+; Software starts at 0x0280
+; It can be assembled anywhere but memory 0x1000-0x2000 must be available RAM
+;-----------------------------------------------------------------------------
+* = $0280
+
 #define noNONRANDOM	; Define NONRANDOM to have a repeatable sequence
 #define noDEBUG		; Define DEBUG to include some debugging support
 
@@ -13,9 +19,9 @@
 ; Apple1 ROM & Hardware constants
 ;-----------------------------------------------------------------------------
 
-ECHO 	= $FFEF			; ECHO A CHARACTER
-KBD 	= $D010			; KEYBOARD
-KBDCR 	= $D011			; KEYBOARD CONTROL
+ECHO 			= $FFEF		; ECHO A CHARACTER
+KBD 			= $D010		; KEYBOARD
+KBDCR 			= $D011		; KEYBOARD CONTROL
 
 ;-----------------------------------------------------------------------------
 ; Zero page variables layout
@@ -32,16 +38,17 @@ KBDCR 	= $D011			; KEYBOARD CONTROL
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 ; 00 | X COORD | Y COORD | X DELTA | Y DELTA |ZOOM|FREQ|         |    |SEED|ABRT| IT |
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-X0 = $00				; Top-left position in the set
-Y0 = $02
-DX = $04				; Current delta
-DY = $06
-ZOOMLEVEL = $08			; Current zoom level (0-4)
-FREQ = $09				; Used to randomly choose the next coordinates during the computation of the current one
-SEED = $0D				; The random seed
-ABORT = $0E				; If bit 7 is set, abort was requested by the user
-						; Use BIT ABORT + BMI to check
-IT = $0F				; Iteration counter
+X0 				= $00		; Top-left position in the set
+Y0 				= $02
+DX 				= $04		; Current delta
+DY 				= $06
+ZOOMLEVEL		= $08		; Current zoom level (0-4)
+FREQ 			= $09		; Used to randomly choose the next coordinates during the computation of the current one
+SEED 			= $0D		; The random seed
+ABORT 			= $0E		; If bit 7 is set, abort was requested by the user
+							; Use BIT ABORT + BMI to check
+							; It aborts the menu display or the current mandelbrot
+IT 				= $0F		; Iteration counter
 
 ;-----------------------------------------------------------------------------
 ;    Coordinates of the next mandelbrot to display (X,Y and X,Y deltas)
@@ -50,11 +57,11 @@ IT = $0F				; Iteration counter
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 ; 10 | NEXT X  | NEXT  Y | NX DELTA| NY DELTA|ZOOM|                                  |
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-NEXTX = $10				; Next position we will zoom in
-NEXTY = $12
-NEXTDX = $14			; Next delta we will use after zooming in
-NEXTDY = $16
-NEXTZOOMLEVEL = $18		; Next zoom level (0-4)
+NEXTX 			= $10		; Next position we will zoom in
+NEXTY 			= $12
+NEXTDX 			= $14		; Next delta we will use after zooming in
+NEXTDY 			= $16
+NEXTZOOMLEVEL	= $18		; Next zoom level (0-4)
 
 ;-----------------------------------------------------------------------------
 ; Current "pixel" beging computed, in mandelbrot and screen space
@@ -63,14 +70,14 @@ NEXTZOOMLEVEL = $18		; Next zoom level (0-4)
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 ; 20 | X CURR  | Y CURR  | X SCRN  | Y SCRN  |   ZX    |   ZY    |  ZX^2   |  ZY^ 2  |
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-X = $20					; Current position in the set
-Y = $22
-SCRNX = $24	        	; Counter of lines and columns left to draw
-SCRNY = $26
-ZX = $28				; X in current iteration
-ZY = $2A
-ZX2 = $2C				; X^2 in current iteration
-ZY2 = $2E
+X 				= $20		; Current position in the set
+Y 				= $22
+SCRNX 			= $24      	; Counter of lines and columns left to draw
+SCRNY 			= $26
+ZX 				= $28		; X in current iteration
+ZY 				= $2A
+ZX2 			= $2C		; X^2 in current iteration
+ZY2 			= $2E
 
 ;-----------------------------------------------------------------------------
 ; Various temporaries
@@ -79,22 +86,25 @@ ZY2 = $2E
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 ; 30 | 3 BYTES NUM  | 3 BYTES INC  | POINTER |               			             |
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-NUM = $30  				; A 3 bytes number used to build the square table
-INCR = $33 				; 3 bytes increment used to build the square table
-PTR = $36				; A generic pointer
+NUM 			= $30		; A 3 bytes number used to build the square table
+INCR 			= $33		; 3 bytes increment used to build the square table
+PTR 			= $36		; A generic pointer
 
 
 
 
 #ifdef DEBUG
 
+;-----------------------------------------------------------------------------
 ; Temporary variables used by debug code
+;-----------------------------------------------------------------------------
+
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 ; 40 | DBG TMP1| DBG TMP2|    DBG TMP   |                                            |
 ;    +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-TMP1 = $40
-TMP2 = $42
-TMP_DBG = $44		; 3 Bytes needed
+TMP1 			= $40
+TMP2 			= $42
+TMP_DBG 		= $44		; 3 Bytes needed
 
 #endif
 
@@ -108,35 +118,43 @@ TMP_DBG = $44		; 3 Bytes needed
 ; +-+-+-+-+-+-+-+-+ +-+-+-+-+-+-+-+-+
 ; |i|i|i|i|i|i|i|f| |f|f|f|f|f|f|f|N|
 ; +-+-+-+-+-+-+-+-+ +-+-+-+-+-+-+-+-+
-;  S     V
-; iiii = integer part (7 bits, 3 sgnificant + sign, two complement)
+;
+; iiii = integer part (7 bits, 3 significant + sign, two complement)
 ; ffffffff = fractional part (8 bits)
 ; N is Nan:
 ; 	0 for having even addresses in the square table
 ;	1 for illegal number
 ; The cannonical NaN is 00000000 00000001
-; S = SIGNBIT
-; V = OVERFLOW
-; If S!=V the overflow
 ; Square table is at 00010000 00000000
 ;                 to 00011111 11111111
-; Numbers in the form of 00001nnn nnnnnnn0 have squares that overflow,
+; All numbers in the form of 00001iif fffffff0 have squares that overflow,
+; (because they are larger than 4, so they square is larger than 8, the maxium)
 ; so there is opportunity to either squeeze more numbers in a rewrite (3.9 fixed point)
 ; or using less memory for the table
+; Also, the least significant bits are not that important, 
+; so we could move to a 4.12 or 5.11 fixed point representation
+; (with loss of precision in squares)
 
 ; Default Mandelbrot coordinates
-INITALX = $FBD0				; LEFT = 11111011 11010000 = -2.093
-INITALY = $FDC0				; TOP  = 11111101 11000000 = -1.125
-INITIALDX = $0026			; DX   = 00000000 00100110 = 0.073
-INITIALDY = $0030			; DY   = 00000000 00110000 = 0.094
+INITALX 		= $FBD0		; LEFT = 11111011 11010000 = -2.093
+INITALY 		= $FDC0		; TOP  = 11111101 11000000 = -1.125
+INITIALDX 		= $0026		; DX   = 00000000 00100110 = 0.073
+INITIALDY 		= $0030		; DY   = 00000000 00110000 = 0.094
 
 ; Time to wait between two mandelbrot displays in "rought seconds"
-WAITIME = 4
+WAITIME 		= 4			; Approx number of seconds to wait before going
+							; to the next mandelbrot display
 
 ; Location of the square table (cannot be changed)
-SQUARETABLE = $1000			; This table cannot be moved
+; It may be a good idea to support $E000-$EFFF for square table as well
+; (for 4K+4K machines with RAM for BASIC)
+SQUARETABLE 	= $1000		; This table cannot be moved
 SQUARETABLE_END = $2000		; End of table
 
+; Width and height of the screen
+; Cannot be changed, but usefull to avoid magic numbers
+SCREENWIDTH 	= 40
+SCREENHEIGHT 	= 24
 
 ;-----------------------------------------------------------------------------
 ; Couple of macros easing the manipulation of 16 bits numbers
@@ -148,18 +166,15 @@ SQUARETABLE_END = $2000		; End of table
 	; Stores AX into NUM
 #define MSTOREAX(NUM) STX NUM: STA NUM+1
 
-
-
 ;-----------------------------------------------------------------------------
-; Software starts at 0x0280
-; It can be assembled anywhere but memory 0x1000-0x2000 must be available RAM
+; Entry point
 ;-----------------------------------------------------------------------------
-* = $0280
 
 	JMP MAIN
 
 ;-----------------------------------------------------------------------------
 ; The data that defines how this whole thing looks
+; Placed at the beginning for easier editing
 ;-----------------------------------------------------------------------------
 
 ;-----------------------------------------------------------------------------
@@ -181,26 +196,29 @@ PALETTE:
 
 ;-----------------------------------------------------------------------------
 ; The offset of each palette
+; (Not ideal as it limits the total palette to < 256 chars)
+; (A double indirection would be better)
 ;-----------------------------------------------------------------------------
 PALETTEDELTA:
 	.byte 0, 40, 80, 120, 160
 
 ;-----------------------------------------------------------------------------
 ; The number of iteration per zoom level
+; This also defines each palette length
 ;-----------------------------------------------------------------------------
 MAXITER:
 	.byte 19, 24, 29, 34, 39
 
 ;-----------------------------------------------------------------------------
-; If iteration is lower than ZOOMTRIGGERMIN, the poinr cannot be chosen
-; as next position
+; If iteration is lower than ZOOMTRIGGERMIN, the point cannot be chosen
+; as next position (too far away from the set0)
 ;-----------------------------------------------------------------------------
 ZOOMTRIGGERMIN:
 	.byte 15, 17, 18, 19, 20
 
 ;-----------------------------------------------------------------------------
 ; If iteration is larger or equal to ZOOMTRIGGERMAX, the poinr cannot be chosen
-; as next position
+; as next position (too close to the set)
 ;-----------------------------------------------------------------------------
 ZOOMTRIGGERMAX:
 	.byte 20, 20, 21, 22, 23
@@ -215,7 +233,7 @@ MAIN:
 .(
 		; Initialize ZP constants
 	LDA #0
-	STA ABORT
+	STA ABORT		; Will be $80 if user abort
 
 		; Display intro
 	JSR PRINTINLINE
@@ -228,6 +246,9 @@ MAIN:
 .byte "        (PRESS ANY KEY TO START)", $d
 .byte 0
 
+		; If user aborted, we skip waiting for keypress
+		; as we already collected entropy in the amount
+		; of characters displayed
 	BIT ABORT
 	BMI SKIP
 
@@ -240,7 +261,6 @@ LOOP:
 	LDA KBD
 
 SKIP:
-
 #ifdef NONRANDOM
 		; If you want repeatability
 	LDA #$1
@@ -263,7 +283,8 @@ SKIP:
 ;-----------------------------------------------------------------------------
 MANDELAUTO:
 .(
-	JSR INITIALPLACE	; Starts a mandelbrot
+		; Starts a full mandelbrot
+	JSR INITIALPLACE
 
 LOOP:
 		; Load next place to go
@@ -481,12 +502,12 @@ DRAWSET:
 	LDA #0
 	STA FREQ
 
-	LDA #24
+	LDA #SCREENHEIGHT
 	STA SCRNY
 	MLOADAX(Y0)
 	MSTOREAX(Y)
 LOOP1:
-	LDA #40
+	LDA #SCREENWIDTH
 	STA SCRNX
 	MLOADAX(X0)
 	MSTOREAX(X)
@@ -516,11 +537,11 @@ LOOP2:
 		; To avoid scrolling when image is complete, we skip the last char
 	TAX
 	LDA SCRNY
-	CMP #1
+	CMP #1			; Last line
 	BNE CONTINUE
 	LDA SCRNX
-	CMP #1
-	BEQ DONE
+	CMP #1			; and last column
+	BEQ DONE		; we stop
 
 CONTINUE:
 		; Handle keypress
@@ -625,7 +646,7 @@ SELECTNEXT:
 	STA NEXTY+1
 
 					; Remove 20x NEXTDX to NEXTX
-	LDX #20
+	LDX #SCREENWIDTH/2
 LOOP1:
 	LDA NEXTX
 	SEC
@@ -638,7 +659,7 @@ LOOP1:
 	BNE LOOP1
 
 					; Remove 12x NEXTDY to NEXTY
-	LDX #12
+	LDX #SCREENHEIGHT/2
 LOOP2:
 	LDA NEXTY
 	SEC
@@ -660,11 +681,12 @@ SKIP:
 .)
 
 ;-----------------------------------------------------------------------------
-; Sets Z 1/A times
+; Sets Z flag 1/A times
+; Fundamentally we compute (A%Z)==1, quite slowly
 ; Input:
 ;   A: FREQ
 ; Output:
-;   Z: 1/FREQ times
+;   Z flag: set 1/FREQ times
 ;-----------------------------------------------------------------------------
 RNDCHOICE:
 .(
@@ -679,16 +701,17 @@ LOOP:
 SKIP:
 	DEY
 	BNE LOOP
-	TXA				; If X will be 1 1/FREQ times
-	CMP #1
-DONE:
+	TXA				; If X will be equal to 1 1/FREQ times
+	CMP #1			; Test A%Z == 1
 	RTS
 .)
 
 ;-----------------------------------------------------------------------------
 ; Return a random number in A
+; Only an 8 bits seed, 255 different sequences
+; Source: https://codebase64.org/doku.php?id=base:small_fast_8-bit_prng
 ; Input:
-;   ZP:SEED seend
+;   ZP:SEED seed
 ; Output:
 ;   A random number
 ;   SEED updated
@@ -920,7 +943,6 @@ CHARFROMIT:
 	RTS
 .)
 
-
 ;-----------------------------------------------------------------------------
 ; Input:
 ;   A,X: number
@@ -1023,7 +1045,6 @@ LOOP:
 	STA (PTR),Y
 	LDA NUM+2
 	ROL
-;	ORA #NUMBIT
 	INY
 	STA (PTR),Y
 
@@ -1134,13 +1155,10 @@ PRINTDONE:
 	PHA
 	MLOADAX(TMP_DBG)
 	JSR PRINT_AX
-	; LDA #$d
-	; JSR ECHO
 	MLOADAX(TMP_DBG)
 	LDY TMP_DBG+2
 	RTS
 .)
-
 
 ;-----------------------------------------------------------------------------
 ; Prints the number. No change to any register. Trashes TMP and PTR
@@ -1221,7 +1239,6 @@ LOOP3:
 	ORA #'0'
 	JSR ECHO
 
-
 	DEX
 	BNE LOOP3
 	RTS
@@ -1229,12 +1246,15 @@ LOOP3:
 
 	; Double TMP1
 DBLTMP1:
+.(
 	ASL TMP1
 	ROL TMP1+1
 	RTS
+.)
 
 	; Add TMP2 to TMP1
 ADDTMP1:
+.(
 	CLC
 	LDA TMP1
 	ADC TMP2
@@ -1243,5 +1263,6 @@ ADDTMP1:
 	ADC TMP2+1
 	STA TMP1+1
 	RTS
+.)
 
 #endif

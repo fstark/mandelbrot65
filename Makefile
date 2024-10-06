@@ -3,8 +3,8 @@ all: mandelbrot65.o65 mandelbrot65.hex
 clean:
 	rm -f others/validate mandelbrot65.lst mandelbrot65.o65 mandelbrot65.hex mandelbrot65.snp
 
-test: others/validate
-	others/validate
+test: mandelbrot65.o65
+	( echo "	MF" ; python3 ../apple1loader/utils/bin2woz.py mandelbrot65.o65 280 ; echo "	" ; echo "280R" ; echo " "  ) > ../napple1/AUTOTYPING.TXT
 
 others/validate: others/validate.cpp
 	# cc -g -std=c++23 others/validate.cpp -o others/validate -lstdc++
