@@ -718,12 +718,12 @@ SKIP:
 ;-----------------------------------------------------------------------------
 RANDOM:
 .(
-    LDA SEED
-    ASL
-    BCC SKIP
-    EOR #$1d
+	LDA SEED
+	ASL
+	BCC SKIP
+	EOR #$1d
 SKIP:
-	sta SEED
+	STA SEED
 	RTS
 .)
 
@@ -964,7 +964,7 @@ SQUARE:
 	BEQ DONENAN
 	TAX
 	INY
-	LDA (PTR),Y
+	LDA (PTR),Y			; Get MSB of the square
 DONE:
 	CLC
 	RTS
