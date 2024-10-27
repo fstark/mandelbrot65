@@ -953,19 +953,18 @@ CHARFROMIT:
 SQUARE:
 .(
 	JSR ABS				; Absolute value
-	CMP #$08
-	BPL DONENAN			; Larger than 4, we overflow the table (faster than ANDing with F0)
+	CMP #8
+	BPL DONENAN			; Larger than 4, we would overflow the table
 	ORA #$10			; Set square table address bit (0x1000)
 	STX PTR
 	STA PTR+1
 	LDY #0
-	LDA (PTR),Y
-	CMP #1
-	BEQ DONENAN
+	LDA (PTR),Y			; Get LSB of the square
+	CMP #1				; 1 in the LSB is the NAN indicator
+	BEQ DONENAN			; (as all our numbers are even)
 	TAX
 	INY
 	LDA (PTR),Y			; Get MSB of the square
-DONE:
 	CLC
 	RTS
 DONENAN:
