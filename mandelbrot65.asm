@@ -953,7 +953,7 @@ CHARFROMIT:
 SQUARE:
 .(
 	JSR ABS				; Absolute value
-	CMP #8
+	CMP #8				; Really 4<<1
 	BPL DONENAN			; Larger than 4, we would overflow the table
 	ORA #$10			; Set square table address bit (0x1000)
 	STX PTR
