@@ -169,8 +169,176 @@ SCREENHEIGHT 	= 24
 ;-----------------------------------------------------------------------------
 ; Entry point
 ;-----------------------------------------------------------------------------
-
+START = *
 	JMP MAIN
+;-----------------------------------------------------------------------------
+; This independent code is used to checksum the software
+; Run it on a machine where it works and one where it doesn't
+; and compare the checksums
+;-----------------------------------------------------------------------------
+.(
+FROM	= $A0
+MID		= $A2
+TO		= $A4
+
+CRC     = $A6          ; current value of CRC
+TMP		= $A7
+CRC_FROM= $A8
+CRC_TO  = $AA
+
+PRBYTE = $FFDC
+WOZMON = $FF00
+
+	LDA #13
+	JSR ECHO
+
+	LDA #<START
+	STA FROM
+	LDA #>START
+	STA FROM+1
+	LDA #<END
+	STA TO
+	LDA #>END
+	STA TO+1
+
+
+NEXTCRC:
+	JSR CALCMID
+
+	LDA FROM
+	STA	CRC_FROM
+	LDA FROM+1
+	STA CRC_FROM+1
+
+	LDA MID
+	STA CRC_TO
+	LDA MID+1
+	STA CRC_TO+1
+
+	LDA #'1'
+	JSR ECHO
+	LDA #')'
+	JSR ECHO
+
+	JSR PRRANGE
+	JSR CRCRANGE
+	JSR PRCRC
+
+	LDA MID
+	STA	CRC_FROM
+	LDA MID+1
+	STA CRC_FROM+1
+
+	LDA TO
+	STA CRC_TO
+	LDA TO+1
+	STA CRC_TO+1
+
+	LDA #'2'
+	JSR ECHO
+	LDA #')'
+	JSR ECHO
+
+	JSR PRRANGE
+	JSR CRCRANGE
+	JSR PRCRC
+
+; Wait for 1 or 2
+WAIT:
+	LDA KBDCR
+	BPL WAIT
+	LDA KBD
+	AND #$7F
+	CMP #'2'
+	BEQ SECOND
+
+	LDA MID
+	STA TO
+	LDA MID+1
+	STA TO+1
+	JMP NEXTCRC
+SECOND:
+	LDA MID
+	STA FROM
+	LDA MID+1
+	STA FROM+1
+	JMP NEXTCRC
+
+PRRANGE:
+	LDA CRC_FROM+1
+	JSR PRBYTE
+	LDA CRC_FROM
+	JSR PRBYTE
+	LDA #'-'
+	JSR ECHO
+	LDA CRC_TO+1
+	JSR PRBYTE
+	LDA CRC_TO
+	JSR PRBYTE
+	LDA #':'
+	JMP ECHO
+
+PRCRC:
+	LDA CRC
+	JSR PRBYTE
+	LDA #13
+	JMP ECHO
+	
+CALCMID:
+	; MID = (FROM+TO)/2
+
+    ; Clear the carry flag
+    CLC
+
+    ; Add the low bytes of FROM and TO
+    LDA FROM
+    ADC TO
+    STA MID
+
+    ; Add the high bytes of FROM and TO, including the carry from the previous addition
+    LDA FROM+1
+    ADC TO+1
+    STA MID+1
+
+	; Now divide by 2
+	LSR MID+1
+	ROR MID
+	RTS
+
+; From http //www.6502.org/source/integers/crc-more.html
+CRC8:
+        EOR CRC         ; A contained the data
+        STA CRC         ; XOR it with the byte
+        ASL             ; current contents of A will become x^2 term
+        BCC UP1         ; if b7 = 1
+        EOR #$07        ; then apply polynomial with feedback
+UP1     EOR CRC         ; apply x^1
+        ASL             ; C contains b7 ^ b6
+        BCC UP2
+        EOR #$07
+UP2     EOR CRC         ; apply unity term
+        STA CRC         ; save result
+        RTS
+
+; Computes CRC
+CRCRANGE:
+		LDA  #$00
+		STA CRC
+LOOP	LDA CRC_FROM
+		CMP CRC_TO
+		BNE CONT
+		LDA CRC_FROM+1
+		CMP CRC_TO+1
+		BNE CONT
+		RTS
+CONT	LDY #0
+		LDA (CRC_FROM),Y
+		JSR CRC8
+		INC CRC_FROM
+		BNE LOOP
+		INC CRC_FROM+1
+		JMP LOOP
+.)
 
 ;-----------------------------------------------------------------------------
 ; The data that defines how this whole thing looks
@@ -238,11 +406,11 @@ MAIN:
 		; Display intro
 	JSR PRINTINLINE
 .byte $d, $d
-.byte "        --== Mandelbrot 65 ==--  ", $d, $d
+.byte "        --== MANDELBROT 65 ==--  ", $d, $d
 .byte "A 6502 MANDELBROT & JULIA TIME WASTER", $d
 .byte "                        FOR YOUR APPLE 1", $d, $d
-.byte "                V1.0 BY FRED STARK, 2024"
-.byte "       http://stark.fr/blog/mandelbrot65",$d,$d
+.byte "                V1.1 BY FRED STARK, 2024"
+.byte "       HTTP://STARK.FR/BLOG/MANDELBROT65",$d,$d
 .byte "        (PRESS ANY KEY TO START)", $d
 .byte 0
 
@@ -1265,3 +1433,5 @@ ADDTMP1:
 .)
 
 #endif
+
+END = *
