@@ -22,6 +22,23 @@ The demo will wait for a key press (to initialize its internal random number gen
 
 At any time, you can press a key to skip the initial messages or the mandelbrot displays.
 
+# The hidden CRC checker
+
+Since version 1.1, there is a hidden CRC checker, usefull when the loaded binary doesn't fully work
+Using 283R, you will be presented with two CRC numbers, like:
+```
+1)0280-0594:C1
+2)0594-08A9:3A
+```
+Do the same on two machines, one known good (use an emulator, like https://www.scullinsteel.com/apple1/ , copy/pasting the ```.hex`` file)
+Press ``1`` or ``2`` depending on which CRC differs.
+It will then present 2 CRCs for this memory range:
+```
+1)0280-040A:35
+2)040A-0594:8A
+```
+Repeat until the range is one byte. This should help you identify which part of Mandelbrot65 failed to load.
+
 # How do I build it?
 
 Use the ``xa`` assembler and the top level Makefile.
