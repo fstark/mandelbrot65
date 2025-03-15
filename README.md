@@ -6,7 +6,7 @@ The title says it all. This is the fastest Mandelbrot calculator for the Apple1.
 
 # How do I get it?
 
-This demo as been designed for Aberco/SiliconInsider yet-to-be-released Apple1 ROM card.
+This demo as been designed for [Aberco/SiliconInsider Apple1 RAM/ROM card](https://www.ebay.com/itm/116371746487). Of course it also works without.
 
 If you want to use the demo standalone, use either the binary file [mandelbrot65.o65](mandelbrot65.o65) or the [hex file](mandelbrot65.hex).
 
