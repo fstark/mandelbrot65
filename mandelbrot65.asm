@@ -399,6 +399,7 @@ ZOOMTRIGGERMAX:
 ;-----------------------------------------------------------------------------
 MAIN:
 .(
+	CLD					; Clear decimal mode
 		; Initialize ZP constants
 	LDA #0
 	STA ABORT		; Will be $80 if user abort
@@ -407,7 +408,7 @@ MAIN:
 	JSR PRINTINLINE
 .byte $d, $d
 .byte "        --== MANDELBROT 65 ==--  ", $d, $d
-.byte "A 6502 MANDELBROT & JULIA TIME WASTER", $d
+.byte "A 6502 MANDELBROT SET TIME WASTER", $d
 .byte "                        FOR YOUR APPLE 1", $d, $d
 .byte "                V1.1 BY FRED STARK, 2024"
 .byte "       HTTP://STARK.FR/BLOG/MANDELBROT65",$d,$d
